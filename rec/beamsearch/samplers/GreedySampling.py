@@ -14,6 +14,7 @@ class GreedySampler:
                  is_final_sample=False,
                  is_first_index=False,
                  topk=None):
+
         self.seed = seed
         self.coding = coding
         self.target = target
@@ -47,7 +48,7 @@ class GreedySampler:
 
         return log_probs
 
-    def choose_samples_to_transmit(self, samples, previous_samples=None):
+    def choose_samples_to_transmit(self, samples, n_samples_per_aux=None, previous_samples=None):
         if self.is_final_sample:
             log_probs = self.final_sample(samples, previous_samples)
 
@@ -61,7 +62,7 @@ class GreedySampler:
             coding_joint_log_prob = self.coding_joint_history + self.coding.log_prob(samples)
 
             # need to use a mask if beamwidth is bigger than number of samples
-            mask = torch.ones
+
             # compute ratio of joint probs
             if self.use_ratio:
                 log_ratios = target_joint_log_prob - coding_joint_log_prob
@@ -74,16 +75,15 @@ class GreedySampler:
             samples_to_transmit = samples[top_indices]
 
         else:
-            # number of aux samples
-            n_auxiliary = samples.shape[0] // self.topk
             # tile the joint histories
-            tiled_coding_joint_history = torch.tile(self.coding_joint_history, (n_auxiliary,))
-            tiled_target_joint_history = torch.tile(self.target_joint_history, (n_auxiliary,))
+            tiled_coding_joint_history = torch.tile(self.coding_joint_history, (n_samples_per_aux,))
+            tiled_target_joint_history = torch.tile(self.target_joint_history, (n_samples_per_aux,))
 
             # compute new joint log probs
             target_joint_log_prob = tiled_target_joint_history + self.target.log_prob(samples)
             coding_joint_log_prob = tiled_coding_joint_history + self.coding.log_prob(samples)
 
+            # mask the 0's since beamwidth may be larger than
             # compute ratio of joint probs
             if self.use_ratio:
                 log_ratios = target_joint_log_prob - coding_joint_log_prob

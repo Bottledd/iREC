@@ -1,14 +1,15 @@
 import math
+
+import matplotlib.pyplot as plt
 import torch
 import torch.distributions as dist
-import matplotlib.pyplot as plt
 from tqdm import tqdm
+
+from models.BayesianLinRegressor import BayesLinRegressor
 from rec.distributions.CodingSampler import CodingSampler
 from rec.distributions.EmpiricalMixturePosterior import EmpiricalMixturePosterior
-from models.BayesianLinRegressor import BayesLinRegressor
-from rec.utils import kl_estimate_with_mc, plot_running_sum, plot_2d_distribution
-from rec.samplers.ImportanceSampling import ImportanceSampler
 from rec.samplers.GreedySampling import GreedySampler
+from rec.utils import kl_estimate_with_mc, plot_running_sum, plot_2d_distribution
 
 
 class Encoder:
@@ -29,9 +30,10 @@ class Encoder:
         # first try with torch distributions
 
         # create dummy coding object to compute kl with target
-        coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1)
+        coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1, var=1)
         try:
             kl_q_p = dist.kl_divergence(target, coding_z_prior)
+            # print(f"{kl_q_p}")
         except:
             # need to do MC estimate
             kl_q_p = kl_estimate_with_mc(target, coding_z_prior)
@@ -43,7 +45,8 @@ class Encoder:
 
         # instantiate the coding sampler and auxiliary posterior
         instance_coding_sampler = coding_sampler(problem_dimension=self.problem_dimension,
-                                                 n_auxiliary=self.n_auxiliary)
+                                                 n_auxiliary=self.n_auxiliary,
+                                                 var=1)
 
         self.auxiliary_posterior = auxiliary_posterior(target,
                                                        n_samples_from_target,
@@ -67,7 +70,11 @@ class Encoder:
         # set the initial seed
         self.initial_seed = initial_seed
 
-    def update_stored_samples(self, index, indices, samples, coding_dist=None, auxiliary_posterior_dist=None, final_sample=False):
+        # store kls between aux variables
+        self.aux_var_kl = torch.zeros((self.n_auxiliary,))
+
+    def update_stored_samples(self, index, indices, samples, coding_dist=None, auxiliary_posterior_dist=None,
+                              final_sample=False):
         # update selected samples
         self.selected_samples[index] = samples
         self.selected_samples_indices[index] = indices
@@ -80,13 +87,13 @@ class Encoder:
             self.selected_samples_joint_coding_log_prob += coding_log_probs
             self.selected_samples_joint_posterior_log_prob += auxiliary_posterior_log_prob
 
-            # update mixture_weights
-            self.selected_samples_mixing_weights = auxiliary_posterior_dist.component_distribution.log_prob(samples)
+            # update mixture_weights - since these are the joint p(a_{1:k}|z) simply add on p(a_k | a_{1:k-1}, z_d)
+            self.selected_samples_mixing_weights += auxiliary_posterior_dist.component_distribution.log_prob(samples)
 
     def run_encoder(self):
-        for i in tqdm(range(self.n_auxiliary)):
+        for i in range(self.n_auxiliary):
             # set the seed
-            seed = i + self.initial_seed
+            seed = (i * 10e4) + self.selected_samples_indices[i-1]
             # create new auxiliary prior distribution, p(a_k)
             auxiliary_prior = self.auxiliary_posterior.coding_sampler.auxiliary_coding_dist(i)
 
@@ -108,9 +115,13 @@ class Encoder:
                 trial_aks = selection_sampler.get_samples_from_coder()
 
                 # here would add stuff like repeating etc for beamsearch
-
                 indices, samples = selection_sampler.choose_samples_to_transmit(samples=trial_aks)
 
+                # do kl estimate on q(a_k | a_{1:k-1})
+                kl_estimate = kl_estimate_with_mc(target=auxiliary_conditional_posterior, coder=auxiliary_prior,
+                                                  num_samples=10000)
+                self.aux_var_kl[i] = kl_estimate
+                print(f"KL of aux {i} is {kl_estimate}")
                 # update stored samples, indices and log probs
                 self.update_stored_samples(i, indices, samples, auxiliary_prior, auxiliary_conditional_posterior)
             else:
@@ -134,11 +145,11 @@ class Encoder:
 
 
 if __name__ == '__main__':
-    initial_seed = 0
+    initial_seed = 100
     blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
-                            prior_alpha=0.001,
-                            signal_std=5,
-                            num_targets=15,
+                            prior_alpha=0.01,
+                            signal_std=1,
+                            num_targets=10,
                             seed=initial_seed)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
@@ -148,22 +159,27 @@ if __name__ == '__main__':
     coding_sampler = CodingSampler
     auxiliary_posterior = EmpiricalMixturePosterior
     selection_sampler = GreedySampler
-    omega = 3
-    n_samples_from_target = 2
+    omega = 5
+    n_samples_from_target = 1
 
     encoder = Encoder(target,
-                     initial_seed,
-                     coding_sampler,
-                     selection_sampler,
-                     auxiliary_posterior,
-                     omega,
-                     n_samples_from_target,
-                     epsilon=0.0,
-                     )
+                      initial_seed,
+                      coding_sampler,
+                      selection_sampler,
+                      auxiliary_posterior,
+                      omega,
+                      n_samples_from_target,
+                      epsilon=0.0,
+                      )
+    #
+    encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.0421, 0.0417, 0.0419, 0.0417, 0.0413, 0.0430, 0.0427, 0.0406, 0.0415,
+        0.0404, 0.0403, 0.0414, 0.0403, 0.0408, 0.0410, 0.0433, 0.0394, 0.0398,
+        0.0384, 0.0400, 0.0287, 0.0282, 0.0467, 0.0101, 0.0648])
 
     z, indices = encoder.run_encoder()
-
+    print(target.log_prob(z))
     plot_2d_distribution(target)
     plot_running_sum(encoder.selected_samples, plot_index_labels=False)
+    # plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
+    #          'x')
     plt.show()
-

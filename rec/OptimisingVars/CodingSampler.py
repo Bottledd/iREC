@@ -7,23 +7,25 @@ class CodingSampler(dist.MultivariateNormal):
                  problem_dimension,
                  n_auxiliary,
                  var=1,
-                 use_power_rule=True,
-                 power_rule_exponent=0.79):
+                 sigma_vector=None,
+                 optimise_index=None):
 
         self.problem_dimension = problem_dimension
         self.n_auxiliary = n_auxiliary
 
         # create auxiliary variable variances
-        # if using power rule
-        if use_power_rule:
-            sigmas = torch.zeros((n_auxiliary,))
-            sigma_idxs = torch.arange(1, n_auxiliary + 1)
-            for i, idx in enumerate(sigma_idxs):
-                sigmas[i] = (var - torch.sum(sigmas[:i])) * (n_auxiliary + 1 - idx) ** (-1 * power_rule_exponent)
+        self.optimise_index = torch.tensor(optimise_index, requires_grad=False)
+        self.fixed_vars = torch.ones((n_auxiliary,), requires_grad=False) / n_auxiliary
+        if sigma_vector is not None:
+            self.fixed_vars[:optimise_index] = sigma_vector[:optimise_index]
+            remaining_var = var - torch.sum(sigma_vector[:optimise_index])
+            N = n_auxiliary - sigma_vector[:optimise_index].detach().shape[0]
         else:
-            sigmas = var * torch.ones((n_auxiliary,)) / n_auxiliary
-
-        self.auxiliary_vars = sigmas
+            remaining_var = var
+            N = n_auxiliary
+        self.fixed_vars[optimise_index:] = remaining_var * (torch.ones((N,), requires_grad=False) / N)
+        self.learnt_var = torch.tensor(remaining_var / N, requires_grad=True)
+        # self.auxiliary_vars = torch.flip(sigmas, dims=(0,))
         coding_mean = torch.zeros((problem_dimension,))
         coding_covar = torch.eye(problem_dimension) * var
         super(CodingSampler, self).__init__(loc=coding_mean,
@@ -34,6 +36,12 @@ class CodingSampler(dist.MultivariateNormal):
         auxiliary_coding_covar = self.auxiliary_vars[index] * torch.eye(self.problem_dimension)
         return dist.MultivariateNormal(loc=auxiliary_coding_mean,
                                        covariance_matrix=auxiliary_coding_covar)
+
+    @property
+    def auxiliary_vars(self):
+        x = self.fixed_vars.detach()
+        x.index_put_((self.optimise_index.detach(),), self.learnt_var)
+        return x
 
 
 if __name__ == '__main__':

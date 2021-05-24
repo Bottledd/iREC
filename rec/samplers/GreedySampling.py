@@ -10,8 +10,9 @@ class GreedySampler:
                  num_samples: torch.float64,
                  coding_joint_history,
                  target_joint_history,
-                 use_ratio=False,
+                 use_ratio=True,
                  is_final_sample=False):
+
         self.seed = seed
         self.coding = coding
         self.target = target
@@ -23,7 +24,6 @@ class GreedySampler:
 
     def get_samples_from_coder(self):
         torch.manual_seed(self.seed)
-
         # sample from coding distribution
         samples = self.coding.sample((self.num_samples,))
 

@@ -1,26 +1,30 @@
 import torch
 import torch.distributions as dist
 
+
 class CodingSampler(dist.MultivariateNormal):
     def __init__(self,
                  problem_dimension,
                  n_auxiliary,
                  var=1,
-                 use_power_rule=True,
-                 power_rule_exponent=0.79):
+                 sigma_setting='uniform',
+                 power_rule_exponent=0.79,
+                 sigma_vector=None):
 
         self.problem_dimension = problem_dimension
         self.n_auxiliary = n_auxiliary
 
         # create auxiliary variable variances
         # if using power rule
-        if use_power_rule:
+        if sigma_setting == 'power_rule':
             sigmas = torch.zeros((n_auxiliary,))
             sigma_idxs = torch.arange(1, n_auxiliary + 1)
             for i, idx in enumerate(sigma_idxs):
                 sigmas[i] = (var - torch.sum(sigmas[:i])) * (n_auxiliary + 1 - idx) ** (-1 * power_rule_exponent)
-        else:
-            raise Exception("Not Implemented yet")
+        elif sigma_setting == 'uniform':
+            sigmas = var * torch.ones((n_auxiliary,)) / n_auxiliary
+        elif sigma_setting == 'custom':
+            sigmas = sigma_vector
 
         self.auxiliary_vars = sigmas
         coding_mean = torch.zeros((problem_dimension,))

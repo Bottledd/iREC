@@ -2,13 +2,13 @@ import torch
 import matplotlib.pyplot as plt
 
 
-def kl_estimate_with_mc(target, coder, num_samples=1000):
+def kl_estimate_with_mc(target, coder, num_samples=1000, dim=0):
     samples = target.sample((num_samples,))
 
     target_log_prob = target.log_prob(samples)
     coding_log_prob = coder.log_prob(samples)
 
-    return torch.mean(target_log_prob - coding_log_prob)
+    return torch.mean(target_log_prob - coding_log_prob, dim=dim)
 
 
 def plot_2d_distribution(distribution):
@@ -29,5 +29,5 @@ def plot_running_sum(samples, plot_index_labels=False):
     plt.plot(running_sum[:, 0], running_sum[:, 1], '-')
 
     if plot_index_labels:
-        for i, txt in enumerate(range(n_auxiliary - 1)):
+        for i, txt in enumerate(range(n_auxiliary)):
             plt.annotate(txt, (running_sum[i, 0], running_sum[i, 1]), color='white')
