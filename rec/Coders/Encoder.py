@@ -172,9 +172,9 @@ if __name__ == '__main__':
                       epsilon=0.0,
                       )
     #
-    encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.0421, 0.0417, 0.0419, 0.0417, 0.0413, 0.0430, 0.0427, 0.0406, 0.0415,
-        0.0404, 0.0403, 0.0414, 0.0403, 0.0408, 0.0410, 0.0433, 0.0394, 0.0398,
-        0.0384, 0.0400, 0.0287, 0.0282, 0.0467, 0.0101, 0.0648])
+    encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.0419, 0.0428, 0.0413, 0.0421, 0.0403, 0.0405, 0.0414, 0.0401, 0.0403,
+        0.0420, 0.0412, 0.0436, 0.0408, 0.0396, 0.0412, 0.0431, 0.0400, 0.0401,
+        0.0334, 0.0405, 0.0368, 0.0355, 0.0171, 0.0094, 0.0851])
 
     z, indices = encoder.run_encoder()
     print(target.log_prob(z))

@@ -1,16 +1,18 @@
 import math
-
 import torch
 import torch.distributions as dist
+import torch.nn as nn
 from tqdm import tqdm
 from models.BayesianLinRegressor import BayesLinRegressor
-from rec.OptimisingVars.PriorDist import PriorDist
 from rec.OptimisingVars.GMMPosteriorDist import GMMPosteriorDist
+from rec.OptimisingVars.PriorDist import PriorDist
 from rec.utils import kl_estimate_with_mc
 
 
-class OptimisePriorVars:
+class OptimisePriorVars(nn.Module):
     def __init__(self, target, omega, n_trajectories, n_auxiliary, n_samples_from_target, n_mc_samples):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         self.target = target
         self.dim = target.mean.shape[0]
         self.omega = omega
@@ -24,12 +26,13 @@ class OptimisePriorVars:
         self.best_aux_variances = torch.zeros((n_auxiliary,))
 
     def run_optimiser(self):
-        for k in tqdm(range(self.n_auxiliary - 1), ):
+        for k in range(self.n_auxiliary - 1):
             # create new objects
             prior = PriorDist(optimise_index=k, current_optimised_sigmas=self.best_aux_variances,
                               target_dist=self.target, n_auxiliary=self.n_auxiliary)
-
+            prior.to(self.device)
             posterior = GMMPosteriorDist(self.target, self.n_samples_from_target)
+            posterior.to(self.device)
             self.optimise_sigma_k(k, prior, posterior)
 
             # now update values
@@ -43,20 +46,21 @@ class OptimisePriorVars:
             self.aux_trajectories[:, k] = samples.clone().detach()
             self.q_joint_history += log_q_joint.flatten().clone().detach()
             for z in range(self.n_samples_from_target):
-                self.aux_component_hist[:, z] += q_ak.component_distribution.log_prob(self.aux_trajectories[:, k])[z].clone().detach()
+                self.aux_component_hist[:, z] += q_ak.component_distribution.log_prob(self.aux_trajectories[:, k])[
+                    z].clone().detach()
 
             final_kl = torch.mean(kl_estimate_with_mc(q_ak, p_ak, num_samples=1000))
-            print(f"final kl for aux {k+1} is {final_kl}")
+            print(f"final kl for aux {k + 1} is {final_kl}")
         return self.best_aux_variances
 
-
-    def optimise_sigma_k(self, index, prior, posterior, epochs=15000):
+    def optimise_sigma_k(self, index, prior, posterior, epochs=75000):
         optimiser = torch.optim.Adam(prior.parameters(), lr=1e-3)
-        for epoch in range(epochs):
+        for epoch in tqdm(range(epochs)):
             optimiser.zero_grad()
             sigmas = prior.auxiliary_vars
             # sample a_k from q
-            samples, log_q, log_q_joint, q_ak = posterior(sigmas, self.aux_trajectories, index, self.aux_component_hist, self.q_joint_history, n_mc_samples=100)
+            samples, log_q, log_q_joint, q_ak = posterior(sigmas, self.aux_trajectories, index, self.aux_component_hist,
+                                                          self.q_joint_history, n_mc_samples=self.n_mc_samples)
 
             # compute log_prob under p
             log_p, p_ak = prior(samples)
@@ -108,6 +112,6 @@ if __name__ == '__main__':
                                                                                       dim)))
 
     n_auxiliary = math.ceil(kl_q_p / omega)
-
+    print(f"Num of Aux is: {n_auxiliary}")
     optim = OptimisePriorVars(target, omega, n_trajectories, n_auxiliary, n_samples_from_target, n_mc_samples)
     optimised_vars = optim.run_optimiser()
