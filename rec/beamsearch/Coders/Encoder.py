@@ -76,6 +76,9 @@ class Encoder:
         # set the initial seed
         self.initial_seed = initial_seed
 
+        # store kls between aux variables
+        self.aux_var_kl = torch.zeros((self.n_auxiliary,))
+
     def update_stored_samples(self, index, samples, beam_indices=None, sample_indices=None, coding_dist=None,
                               auxiliary_posterior_dist=None, final_sample=False):
         if index == 0:
@@ -128,7 +131,7 @@ class Encoder:
     def run_encoder(self):
         for i in tqdm(range(self.n_auxiliary)):
             # set the seed
-            seed = i + self.initial_seed
+            seed = (i * 10e4) + self.selected_samples_indices[i-1,0]
             # create new auxiliary prior distribution, p(a_k)
             auxiliary_prior = self.auxiliary_posterior.coding_sampler.auxiliary_coding_dist(i)
 
@@ -165,6 +168,12 @@ class Encoder:
                 # here would add stuff like repeating etc for beamsearch
 
                 indices, samples = selection_sampler.choose_samples_to_transmit(samples=trial_aks)
+
+                # do kl estimate on q(a_k | a_{1:k-1})
+                kl_estimate = kl_estimate_with_mc(target=auxiliary_conditional_posterior, coder=auxiliary_prior,
+                                                  num_samples=10000)
+                self.aux_var_kl[i] = kl_estimate
+                print(f"KL of aux {i} is {kl_estimate}")
 
                 # update stored samples, indices and log probs
 
@@ -216,6 +225,12 @@ class Encoder:
 
                 indices, samples = selection_sampler.choose_samples_to_transmit(samples=repeated_aks,
                                                                                 n_samples_per_aux=self.n_samples_per_aux)
+
+                # do kl estimate on q(a_k | a_{1:k-1})
+                kl_estimate = kl_estimate_with_mc(target=auxiliary_conditional_posterior, coder=auxiliary_prior,
+                                                  num_samples=1000)
+                self.aux_var_kl[i] = torch.mean(kl_estimate)
+                print(f"KL of aux {i} is {self.aux_var_kl[i]}")
 
                 # now need to convert indices from flattened to refer to specific beam/ak sample
                 beam_indices, sample_indices = convert_flattened_indices(indices, beamwidth=pruned_beams.shape[0])
@@ -272,8 +287,8 @@ if __name__ == '__main__':
     auxiliary_posterior = EmpiricalMixturePosterior
     selection_sampler = GreedySampler
     omega = 5
-    n_samples_from_target = 100
-    beamwidth = 1
+    n_samples_from_target = 1
+    beamwidth = 50
     encoder = Encoder(target,
                       initial_seed,
                       coding_sampler,
@@ -281,9 +296,13 @@ if __name__ == '__main__':
                       auxiliary_posterior,
                       omega,
                       n_samples_from_target,
-                      epsilon=0.2,
+                      epsilon=0.0,
                       beamwidth=beamwidth)
 
+    encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor(
+        [0.0419, 0.0428, 0.0413, 0.0421, 0.0403, 0.0405, 0.0414, 0.0401, 0.0403,
+         0.0420, 0.0412, 0.0436, 0.0408, 0.0396, 0.0412, 0.0431, 0.0400, 0.0401,
+         0.0334, 0.0405, 0.0368, 0.0355, 0.0171, 0.0094, 0.0851])
 
     z, indices = encoder.run_encoder()
 

@@ -30,10 +30,10 @@ class Encoder:
         # first try with torch distributions
 
         # create dummy coding object to compute kl with target
-        coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1, var=1)
+        coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1)
         try:
             kl_q_p = dist.kl_divergence(target, coding_z_prior)
-            # print(f"{kl_q_p}")
+            print(f"{kl_q_p}")
         except:
             # need to do MC estimate
             kl_q_p = kl_estimate_with_mc(target, coding_z_prior)
@@ -45,8 +45,7 @@ class Encoder:
 
         # instantiate the coding sampler and auxiliary posterior
         instance_coding_sampler = coding_sampler(problem_dimension=self.problem_dimension,
-                                                 n_auxiliary=self.n_auxiliary,
-                                                 var=1)
+                                                 n_auxiliary=self.n_auxiliary)
 
         self.auxiliary_posterior = auxiliary_posterior(target,
                                                        n_samples_from_target,
@@ -94,6 +93,7 @@ class Encoder:
         for i in range(self.n_auxiliary):
             # set the seed
             seed = (i * 10e4) + self.selected_samples_indices[i-1]
+            # seed = i + self.initial_seed
             # create new auxiliary prior distribution, p(a_k)
             auxiliary_prior = self.auxiliary_posterior.coding_sampler.auxiliary_coding_dist(i)
 
@@ -172,14 +172,14 @@ if __name__ == '__main__':
                       epsilon=0.0,
                       )
     #
-    encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.0419, 0.0428, 0.0413, 0.0421, 0.0403, 0.0405, 0.0414, 0.0401, 0.0403,
-        0.0420, 0.0412, 0.0436, 0.0408, 0.0396, 0.0412, 0.0431, 0.0400, 0.0401,
-        0.0334, 0.0405, 0.0368, 0.0355, 0.0171, 0.0094, 0.0851])
+    # encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.0419, 0.0428, 0.0413, 0.0421, 0.0403, 0.0405, 0.0414, 0.0401, 0.0403,
+    #     0.0420, 0.0412, 0.0436, 0.0408, 0.0396, 0.0412, 0.0431, 0.0400, 0.0401,
+    #     0.0334, 0.0405, 0.0368, 0.0355, 0.0171, 0.0094, 0.0851])
 
     z, indices = encoder.run_encoder()
     print(target.log_prob(z))
     plot_2d_distribution(target)
     plot_running_sum(encoder.selected_samples, plot_index_labels=False)
-    # plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
-    #          'x')
+    plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
+             'x')
     plt.show()

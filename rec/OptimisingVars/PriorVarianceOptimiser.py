@@ -53,7 +53,7 @@ class OptimisePriorVars(nn.Module):
             print(f"final kl for aux {k + 1} is {final_kl}")
         return self.best_aux_variances
 
-    def optimise_sigma_k(self, index, prior, posterior, epochs=75000):
+    def optimise_sigma_k(self, index, prior, posterior, epochs=5000):
         optimiser = torch.optim.Adam(prior.parameters(), lr=1e-3)
         for epoch in tqdm(range(epochs)):
             optimiser.zero_grad()
@@ -100,7 +100,7 @@ if __name__ == '__main__':
     omega = 5
     n_trajectories = 64
     n_samples_from_target = 1
-    n_mc_samples = 512
+    n_mc_samples = 10000
     # first try to compute KL between q(z) and p(z) with torch.distributions
     try:
         kl_q_p = dist.kl_divergence(target, dist.MultivariateNormal(loc=torch.zeros((dim,)),

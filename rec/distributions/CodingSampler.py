@@ -8,7 +8,7 @@ class CodingSampler(dist.MultivariateNormal):
                  n_auxiliary,
                  var=1,
                  sigma_setting='uniform',
-                 power_rule_exponent=0.79,
+                 power_rule_exponent=0.6,
                  sigma_vector=None):
 
         self.problem_dimension = problem_dimension
@@ -27,6 +27,7 @@ class CodingSampler(dist.MultivariateNormal):
             sigmas = sigma_vector
 
         self.auxiliary_vars = sigmas
+
         coding_mean = torch.zeros((problem_dimension,))
         coding_covar = torch.eye(problem_dimension) * var
         super(CodingSampler, self).__init__(loc=coding_mean,

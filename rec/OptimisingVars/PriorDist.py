@@ -3,7 +3,7 @@ import math
 import torch
 import torch.distributions as dist
 import torch.nn as nn
-
+from models.BayesianLinRegressor import BayesLinRegressor
 from rec.utils import kl_estimate_with_mc
 
 
@@ -40,6 +40,17 @@ class PriorDist(nn.Module):
 
 
 if __name__ == '__main__':
-    prior = PriorDist
-    # prior = PriorDist(prior_var=1,
-    #                   target_dist=dist.MultivariateNormal(loc=torch.zeros([0, 0]), covariance_matrix=torch.eye(2)))
+    initial_seed = 100
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
+                            prior_alpha=0.01,
+                            signal_std=1,
+                            num_targets=10,
+                            seed=initial_seed)
+    blr.sample_feature_inputs()
+    blr.sample_regression_targets()
+    blr.posterior_update()
+    target = blr.weight_posterior
+    prior = PriorDist(0, 25, target_dist=target)
+    prior.auxiliary_vars
+
