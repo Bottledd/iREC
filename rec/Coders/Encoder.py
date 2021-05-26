@@ -9,6 +9,7 @@ from models.BayesianLinRegressor import BayesLinRegressor
 from rec.distributions.CodingSampler import CodingSampler
 from rec.distributions.EmpiricalMixturePosterior import EmpiricalMixturePosterior
 from rec.samplers.GreedySampling import GreedySampler
+from rec.samplers.ImportanceSampling import ImportanceSampler
 from rec.utils import kl_estimate_with_mc, plot_running_sum, plot_2d_distribution
 
 
@@ -21,7 +22,7 @@ class Encoder:
                  auxiliary_posterior,
                  omega,
                  n_samples_from_target,
-                 epsilon=0,
+                 epsilon=0.,
                  ):
         # deduce dimension of problem from target mean
         self.problem_dimension = target.mean.shape[0]
@@ -93,7 +94,7 @@ class Encoder:
         for i in range(self.n_auxiliary):
             # set the seed
             seed = (i * 10e4) + self.selected_samples_indices[i-1]
-            # seed = i + self.initial_seed
+            # seed = i
             # create new auxiliary prior distribution, p(a_k)
             auxiliary_prior = self.auxiliary_posterior.coding_sampler.auxiliary_coding_dist(i)
 
@@ -169,15 +170,21 @@ if __name__ == '__main__':
                       auxiliary_posterior,
                       omega,
                       n_samples_from_target,
-                      epsilon=0.0,
+                      epsilon=0.,
                       )
-    #
-    # encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.0419, 0.0428, 0.0413, 0.0421, 0.0403, 0.0405, 0.0414, 0.0401, 0.0403,
-    #     0.0420, 0.0412, 0.0436, 0.0408, 0.0396, 0.0412, 0.0431, 0.0400, 0.0401,
-    #     0.0334, 0.0405, 0.0368, 0.0355, 0.0171, 0.0094, 0.0851])
+    # #
+    # encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.040, 0.0427, 0.0423, 0.0423, 0.0424, 0.0406, 0.0420, 0.0427, 0.0420,
+    #         0.0432, 0.0402, 0.0443, 0.0419, 0.0402, 0.0436, 0.0450, 0.0396, 0.0393,
+    #         0.0460, 0.0375, 0.0328, 0.0313, 0.0355, 0.0116, 0.0510])
 
+    encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.0421, 0.0427, 0.0423, 0.0423, 0.0424, 0.0406, 0.0420, 0.0427, 0.0420,
+            0.0432, 0.0402, 0.0443, 0.0419, 0.0402, 0.0436, 0.0450, 0.0396, 0.0393,
+            0.0460, 0.0375, 0.0328, 0.0313, 0.0355, 0.0116, 0.0489])
+
+    print(sum(encoder.auxiliary_posterior.coding_sampler.auxiliary_vars))
     z, indices = encoder.run_encoder()
     print(target.log_prob(z))
+    print(sum(encoder.aux_var_kl))
     plot_2d_distribution(target)
     plot_running_sum(encoder.selected_samples, plot_index_labels=False)
     plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
