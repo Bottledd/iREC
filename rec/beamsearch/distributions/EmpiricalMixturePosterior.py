@@ -69,13 +69,13 @@ class EmpiricalMixturePosterior:
                 component_means[i], component_variances[i] = self.p_ak_given_history_and_z(k, aux_history, z_d)
 
             # make categorical from mixing weights
-            mixing_categorical = dist.Categorical(probs=mixing_weights)
+            mixing_categorical = dist.categorical.Categorical(probs=mixing_weights)
 
             # make component distributions
-            component_gaussians = dist.MultivariateNormal(loc=component_means, covariance_matrix=component_variances)
+            component_gaussians = dist.multivariate_normal.MultivariateNormal(loc=component_means, covariance_matrix=component_variances)
 
             # make mixture distribution
-            gaussian_mixture = dist.MixtureSameFamily(mixing_categorical, component_gaussians)
+            gaussian_mixture = dist.mixture_same_family.MixtureSameFamily(mixing_categorical, component_gaussians)
 
             return gaussian_mixture
 
@@ -87,14 +87,15 @@ class EmpiricalMixturePosterior:
             component_means = torch.zeros((aux_history.shape[0], self.n_samples_from_target, self.problem_dimension))
             component_variances = torch.zeros((aux_history.shape[0], self.n_samples_from_target, self.problem_dimension, self.problem_dimension))
 
+            # TODO instead of loop, can try flattening and then reshaping
             for i, z_d in enumerate(self.empirical_samples):
                 component_means[:, i], component_variances[:, i] = self.p_ak_given_history_and_z(k, aux_history, z_d)
 
             # make categorical from mixing weights
-            mixing_categorical = dist.Categorical(probs=mixing_weights)
+            mixing_categorical = dist.categorical.Categorical(probs=mixing_weights)
 
             # make component distributions
-            component_gaussians = dist.MultivariateNormal(loc=component_means, covariance_matrix=component_variances)
+            component_gaussians = dist.multivariate_normal.MultivariateNormal(loc=component_means, covariance_matrix=component_variances)
 
             # make mixture distribution
             gaussian_mixture = dist.MixtureSameFamily(mixing_categorical, component_gaussians)

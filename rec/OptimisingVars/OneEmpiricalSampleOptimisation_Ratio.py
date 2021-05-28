@@ -18,19 +18,18 @@ class OneSampleOptimise(nn.Module):
         self.omega = omega
         self.optimise_index = 0
         self.register_buffer("trajectories", torch.zeros((n_trajectories, n_auxiliaries, dim)))
-        self.register_buffer("z_sample", target.sample((1,)))
         self.register_buffer("z_sample", target.mean)
-        self.register_buffer('already_optimised_aux_vars', torch.zeros((n_auxiliaries,)))
-        self.register_buffer('total_var', torch.ones((1,)))
-        self.sigma_k = nn.Parameter(self.total_var / self.n_auxiliaries * torch.ones((1,)))
+        self.register_buffer('already_optimised_aux_vars', torch.zeros(n_auxiliaries))
+        self.register_buffer('already_optimised_ratios', torch.zeros(n_auxiliaries))
+        self.register_buffer('total_var', torch.ones(1))
+        self.ratio_k = nn.Parameter(self.total_var / self.n_auxiliaries * torch.ones(1))
         self.kl_history = []
 
     def get_aux_post_params(self, index):
-        s_k_minus_1 = self.total_var - torch.sum(self.already_optimised_aux_vars[:index])
-        s_k = s_k_minus_1 - self.sigma_k
         unscaled_mean = self.z_sample - torch.sum(self.trajectories[:, :index], dim=1)
-        mean_scalar = self.sigma_k / s_k_minus_1
-        variance_scalar = self.sigma_k * s_k / s_k_minus_1
+        mean_scalar = self.ratio_k
+        sigma_k = self.ratio_k * (self.total_var - torch.sum(self.already_optimised_aux_vars[:self.optimise_index]))
+        variance_scalar = sigma_k * (1 - self.ratio_k)
 
         return unscaled_mean, mean_scalar, variance_scalar
 
@@ -41,15 +40,16 @@ class OneSampleOptimise(nn.Module):
 
     @property
     def aux_prior(self):
-        mean = torch.zeros((self.dim,)).to(self.sigma_k.device)
-        covariance = self.sigma_k * torch.eye(self.dim).to(self.sigma_k.device)
+        mean = torch.zeros((self.dim,)).to(self.ratio_k.device)
+        sigma_k = self.ratio_k * (self.total_var - torch.sum(self.already_optimised_aux_vars[:self.optimise_index]))
+        covariance = sigma_k * torch.eye(self.dim).to(self.ratio_k.device)
         return dist.multivariate_normal.MultivariateNormal(loc=mean, covariance_matrix=covariance)
 
     @property
     def aux_posterior(self):
         unscaled_mean, mean_scalar, variance_scalar = self.get_aux_post_params(self.optimise_index)
         mean = unscaled_mean * mean_scalar
-        covariance = torch.eye(self.dim).to(self.sigma_k.device) * variance_scalar
+        covariance = torch.eye(self.dim).to(self.ratio_k.device) * variance_scalar
         return dist.multivariate_normal.MultivariateNormal(loc=mean, covariance_matrix=covariance)
 
     def optimise_for_ak(self, epochs=int(1e3)):
@@ -62,25 +62,29 @@ class OneSampleOptimise(nn.Module):
             self.kl_history.append(kl)
             optimiser.step()
             if i % 100 == 0:
-                print(f"The current sigma for aux {self.optimise_index + 1} is {self.sigma_k.detach().cpu().numpy()[0]}\nThe current KL is {kl}.")
+                print(f"The current KL is {kl}, loss is {loss}.")
             if loss < 1e-10:
                 break
         return kl.detach()
 
     def run_optimiser(self):
-        for k in range(self.n_auxiliaries - 1):
+        pbar = tqdm(range(self.n_auxiliaries - 1), position=0, leave=True)
+        for k in pbar:
             # run the optimisation
             self.optimise_index = k
             self.get_aux_post_params(k)
             kl = self.optimise_for_ak()
-            trained_sigma = self.sigma_k.detach()
-            print(f"The final optimised variance for aux {k + 1} is {trained_sigma.cpu().numpy()[0]}\nFinal KL is {kl}")
+            trained_ratio = self.ratio_k.detach()
+            trained_sigma = trained_ratio * (self.total_var - torch.sum(self.already_optimised_aux_vars[:self.optimise_index].detach()))
+            pbar.set_description(f"The final optimised variance for aux {k + 1} is {trained_sigma.cpu().numpy()[0]}\nFinal KL is {kl}")
+            # print(f"The final optimised variance for aux {k + 1} is {trained_sigma.cpu().numpy()[0]}\nFinal KL is {kl}")
             self.already_optimised_aux_vars[self.optimise_index] = trained_sigma
+            self.already_optimised_ratios[self.optimise_index] = trained_ratio
             self.trajectories[:, self.optimise_index] = self.aux_posterior.sample((self.n_trajectories,))[:, 0].detach()
-            with torch.no_grad():
-                remaining_var = self.total_var - torch.sum(self.already_optimised_aux_vars)
-                uniform_remaining_var = remaining_var / (self.n_auxiliaries - (self.optimise_index + 1))
-                self.sigma_k.copy_(uniform_remaining_var * torch.ones((1,)))
+            # with torch.no_grad():
+            #     remaining_var = self.total_var - torch.sum(self.already_optimised_aux_vars)
+            #     uniform_remaining_var = remaining_var / (self.n_auxiliaries - (self.optimise_index + 1))
+            #     self.ratio_k.copy_(uniform_remaining_var * torch.ones((1,)))
         return self.already_optimised_aux_vars
 
     def compute_run_of_kls(self):
@@ -115,7 +119,6 @@ if __name__ == '__main__':
     prior_var = 1
     omega = 8
     n_trajectories = 1000
-
     # first try to compute KL between q(z) and p(z) with torch.distributions
     try:
         kl_q_p = dist.kl_divergence(target, dist.MultivariateNormal(loc=torch.zeros((dim,)),

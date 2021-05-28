@@ -14,7 +14,7 @@ class EmpiricalMixturePosterior:
         self.coding_sampler = coding_sampler
         self.problem_dimension = self.empirical_samples.shape[-1]
 
-    def p_ak_given_history_and_z(self, aux_history, k, z):
+    def p_ak_given_history_and_z(self, aux_history, k, z_samples):
         """
         :param aux_history: Previous auxiliary variables
         :param k: Index of auxiliary variable in question
@@ -29,7 +29,7 @@ class EmpiricalMixturePosterior:
         mean_scalar = self.coding_sampler.auxiliary_vars[k] / s_k_minus_one
         variance_scalar = self.coding_sampler.auxiliary_vars[k] * s_k / s_k_minus_one
 
-        mean = (z - b_k) * mean_scalar
+        mean = (z_samples - b_k) * mean_scalar
         covariance = torch.eye(self.problem_dimension) * variance_scalar
 
         return mean, covariance
@@ -54,8 +54,9 @@ class EmpiricalMixturePosterior:
         component_means = torch.zeros((self.n_samples_from_target, self.problem_dimension))
         component_variances = torch.zeros((self.n_samples_from_target, self.problem_dimension, self.problem_dimension))
 
-        for i, z_d in enumerate(self.empirical_samples):
-            component_means[i], component_variances[i] = self.p_ak_given_history_and_z(aux_history, k, z_d)
+        component_means, component_variances = self.p_ak_given_history_and_z(aux_history, k, self.empirical_samples)
+        # for i, z_d in enumerate(self.empirical_samples):
+        #     component_means[i], component_variances[i] = self.p_ak_given_history_and_z(aux_history, k, z_d)
 
         # make categorical from mixing weights
         mixing_categorical = dist.categorical.Categorical(probs=mixing_weights)

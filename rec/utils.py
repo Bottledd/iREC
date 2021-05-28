@@ -2,8 +2,11 @@ import torch
 import matplotlib.pyplot as plt
 
 
-def kl_estimate_with_mc(target, coder, num_samples=1000, dim=0):
-    samples = target.sample((num_samples,))
+def kl_estimate_with_mc(target, coder, num_samples=1000, dim=0, rsample=False):
+    if rsample:
+        samples = target.rsample((num_samples,))
+    else:
+        samples = target.sample((num_samples,))
 
     target_log_prob = target.log_prob(samples)
     coding_log_prob = coder.log_prob(samples)

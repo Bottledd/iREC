@@ -36,7 +36,7 @@ class CodingSampler(dist.MultivariateNormal):
     def auxiliary_coding_dist(self, index):
         auxiliary_coding_mean = torch.zeros((self.problem_dimension,))
         auxiliary_coding_covar = self.auxiliary_vars[index] * torch.eye(self.problem_dimension)
-        return dist.MultivariateNormal(loc=auxiliary_coding_mean,
+        return dist.multivariate_normal.MultivariateNormal(loc=auxiliary_coding_mean,
                                        covariance_matrix=auxiliary_coding_covar)
 
 

@@ -272,9 +272,10 @@ class Encoder:
 
 
 if __name__ == '__main__':
+    torch.set_default_tensor_type(torch.DoubleTensor)
     initial_seed = 100
     blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
-                            prior_alpha=0.01,
+                            prior_alpha=0.001,
                             signal_std=1,
                             num_targets=10,
                             seed=initial_seed)
@@ -283,12 +284,15 @@ if __name__ == '__main__':
     blr.posterior_update()
     target = blr.weight_posterior
 
+
+
     coding_sampler = CodingSampler
     auxiliary_posterior = EmpiricalMixturePosterior
     selection_sampler = GreedySampler
-    omega = 5
+    omega = 8
     n_samples_from_target = 1
-    beamwidth = 100
+    beamwidth = 1
+
     encoder = Encoder(target,
                       initial_seed,
                       coding_sampler,
@@ -296,13 +300,9 @@ if __name__ == '__main__':
                       auxiliary_posterior,
                       omega,
                       n_samples_from_target,
-                      epsilon=0.0,
+                      epsilon=0.,
                       beamwidth=beamwidth)
 
-    encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor(
-        [0.0421, 0.0427, 0.0423, 0.0423, 0.0424, 0.0406, 0.0420, 0.0427, 0.0420,
-         0.0432, 0.0402, 0.0443, 0.0419, 0.0402, 0.0436, 0.0450, 0.0396, 0.0393,
-         0.0460, 0.0375, 0.0328, 0.0313, 0.0355, 0.0116, 0.489])
 
     z, indices = encoder.run_encoder()
 

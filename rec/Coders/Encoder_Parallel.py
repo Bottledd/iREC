@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from models.BayesianLinRegressor import BayesLinRegressor
 from rec.distributions.CodingSampler import CodingSampler
-from rec.distributions.EmpiricalMixturePosterior import EmpiricalMixturePosterior
+from rec.distributions.EmpiricalMixturePosterior_Parallel import EmpiricalMixturePosterior
 from rec.samplers.GreedySampling import GreedySampler
 from rec.samplers.ImportanceSampling import ImportanceSampler
 from rec.utils import kl_estimate_with_mc, plot_running_sum, plot_2d_distribution
@@ -123,8 +123,8 @@ class Encoder:
                 kl_estimate = kl_estimate_with_mc(target=auxiliary_conditional_posterior, coder=auxiliary_prior,
                                                   num_samples=1000)
                 self.aux_var_kl[i] = kl_estimate
-                pbar.set_description(f"KL of aux {i+1} is {kl_estimate}")
                 # print(f"KL of aux {i+1} is {kl_estimate}")
+                pbar.set_description(f"KL of aux {i + 1} is {kl_estimate}")
                 # update stored samples, indices and log probs
                 self.update_stored_samples(i, indices, samples, auxiliary_prior, auxiliary_conditional_posterior)
             else:
@@ -151,9 +151,9 @@ if __name__ == '__main__':
     #torch.set_default_tensor_type(torch.DoubleTensor)
     initial_seed = 100
     blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
-                            prior_alpha=0.0001,
-                            signal_std=10,
-                            num_targets=5,
+                            prior_alpha=0.01,
+                            signal_std=1,
+                            num_targets=10,
                             seed=initial_seed)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
@@ -164,7 +164,7 @@ if __name__ == '__main__':
     auxiliary_posterior = EmpiricalMixturePosterior
     selection_sampler = GreedySampler
     omega = 8
-    n_samples_from_target = 1000
+    n_samples_from_target = 10
 
     encoder = Encoder(target,
                       initial_seed,
@@ -175,15 +175,8 @@ if __name__ == '__main__':
                       n_samples_from_target,
                       epsilon=0.,
                       )
-    # encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136,
-    #         0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0137, 0.0137,
-    #         0.0137, 0.0137, 0.0137, 0.0137, 0.0137, 0.0138, 0.0138, 0.0138, 0.0139,
-    #         0.0139, 0.0139, 0.0139, 0.0140, 0.0140, 0.0140, 0.0141, 0.0141, 0.0141,
-    #         0.0142, 0.0142, 0.0142, 0.0143, 0.0143, 0.0143, 0.0144, 0.0144, 0.0145,
-    #         0.0145, 0.0146, 0.0147, 0.0148, 0.0149, 0.0150, 0.0151, 0.0153, 0.0155,
-    #         0.0157, 0.0159, 0.0162, 0.0165, 0.0169, 0.0172, 0.0174, 0.0175, 0.0173,
-    #         0.0165, 0.0150, 0.0125, 0.0091, 0.0063, 0.0043, 0.0031, 0.0024, 0.0074,
-    #         0.0074, 0.0074])
+    encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.0670, 0.0669, 0.0669, 0.0667, 0.0665, 0.0661, 0.0659, 0.0656, 0.0651,
+        0.0646, 0.0635, 0.0624, 0.0602, 0.0577, 0.0542, 0.0408])
 
     z, indices = encoder.run_encoder()
     print(target.log_prob(z))
@@ -192,4 +185,5 @@ if __name__ == '__main__':
     plot_running_sum(encoder.selected_samples, plot_index_labels=False)
     plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
              'x')
+    plt.plot(z[0], z[1], 'o')
     plt.show()
