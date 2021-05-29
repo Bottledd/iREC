@@ -25,7 +25,7 @@ class JointOptimisation(nn.Module):
         self.kl_history = []
 
     def get_aux_post_params(self, index):
-        sigma_ks = nn.functional.softmax(self.pre_softmax_aux_vars)
+        sigma_ks = nn.functional.softmax(self.pre_softmax_aux_vars, dim=0)
         sigma_k = sigma_ks[index]
         s_k_minus_1 = self.total_var - torch.sum(sigma_ks[:index])
         s_k = s_k_minus_1 - sigma_k
@@ -36,7 +36,7 @@ class JointOptimisation(nn.Module):
         return unscaled_mean, mean_scalar, variance_scalar
 
     def aux_prior(self, index):
-        sigma_k = nn.functional.softmax(self.pre_softmax_aux_vars)[index]
+        sigma_k = nn.functional.softmax(self.pre_softmax_aux_vars, dim=0)[index]
         mean = torch.zeros((self.dim,)).to(self.pre_softmax_aux_vars.device)
         covariance = sigma_k * torch.eye(self.dim).to(self.pre_softmax_aux_vars.device)
         return dist.multivariate_normal.MultivariateNormal(loc=mean, covariance_matrix=covariance)
@@ -67,8 +67,9 @@ class JointOptimisation(nn.Module):
     #     log_probs = target.log_prob(z)
     #     return log_probs
 
-    def run_optimiser(self, epochs=10000):
-        optimiser = torch.optim.SGD(self.parameters(), lr=1e-3, momentum=0.9)
+    def run_optimiser(self, epochs=5000):
+        #optimiser = torch.optim.SGD(self.parameters(), lr=1e-3, momentum=0.9)
+        optimiser = torch.optim.Adam(self.parameters(), lr=2e-2)
         pbar = tqdm(range(epochs))
         for i in pbar:
             losses = torch.zeros((self.n_trajectories, self.n_auxiliaries)).to(self.pre_softmax_aux_vars.device)
@@ -87,7 +88,7 @@ class JointOptimisation(nn.Module):
             #print(f"The mean loss is {mean_loss}")
             mean_loss.backward()
             optimiser.step()
-        return nn.functional.softmax(self.pre_softmax_aux_vars.detach())
+        return nn.functional.softmax(self.pre_softmax_aux_vars.detach(), dim=0)
 
     def compute_run_of_kls(self):
         kl_hist = []
@@ -140,3 +141,4 @@ if __name__ == '__main__':
     best_vars = optimising.run_optimiser()
     plt.plot(best_vars, 'o')
     plt.show()
+    optimising.compute_run_of_kls()

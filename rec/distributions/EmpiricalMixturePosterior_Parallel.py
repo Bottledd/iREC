@@ -50,13 +50,7 @@ class EmpiricalMixturePosterior:
         # first need to get mixing weights
         mixing_weights = self.q_z_given_aks_mixing_weights(previous_conditional_coding_joints, log_prob)
 
-        # if not using beamsearch
-        component_means = torch.zeros((self.n_samples_from_target, self.problem_dimension))
-        component_variances = torch.zeros((self.n_samples_from_target, self.problem_dimension, self.problem_dimension))
-
         component_means, component_variances = self.p_ak_given_history_and_z(aux_history, k, self.empirical_samples)
-        # for i, z_d in enumerate(self.empirical_samples):
-        #     component_means[i], component_variances[i] = self.p_ak_given_history_and_z(aux_history, k, z_d)
 
         # make categorical from mixing weights
         mixing_categorical = dist.categorical.Categorical(probs=mixing_weights)
@@ -68,9 +62,3 @@ class EmpiricalMixturePosterior:
         gaussian_mixture = dist.mixture_same_family.MixtureSameFamily(mixing_categorical, component_gaussians)
 
         return gaussian_mixture
-
-    def q_a_one_to_k(self, previous_conditional_target_joints):
-        pass
-
-    def p_a_one_to_k(self, previous_conditional_coding_joints):
-        pass

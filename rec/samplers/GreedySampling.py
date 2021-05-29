@@ -1,6 +1,6 @@
 import torch
 import torch.distributions as dist
-
+import numpy as np
 
 class GreedySampler:
     def __init__(self,
@@ -24,9 +24,13 @@ class GreedySampler:
 
     def get_samples_from_coder(self):
         torch.manual_seed(self.seed)
+        print(torch.random.get_rng_state())
         # sample from coding distribution
         samples = self.coding.sample((self.num_samples,))
 
+        # variance = self.coding.covariance_matrix.numpy()
+        # samples_np = np.random.multivariate_normal(mean=np.zeros(2,), cov=variance, size=(self.num_samples,))
+        # samples = torch.from_numpy(samples_np)
         return samples
 
     def final_sample(self, samples, previous_samples):
@@ -54,6 +58,7 @@ class GreedySampler:
                 log_ratios = target_joint_log_prob - coding_joint_log_prob
                 # take top index
                 top_ratios, top_indices = torch.topk(log_ratios, k=topk)
+
             else:
                 top_target_log_probs, top_indices = torch.topk(target_joint_log_prob, k=topk)
 
