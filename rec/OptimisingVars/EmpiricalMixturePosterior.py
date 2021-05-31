@@ -21,7 +21,7 @@ class EmpiricalMixturePosterior:
         :param z: Specific empirical sample
         :return: Gaussian distribution
         """
-        # TODO sum only up to index k (shouldn't change outputs)
+
         b_k = torch.sum(aux_history, dim=0)
         s_k_minus_one = torch.sum(self.coding_sampler.auxiliary_vars[k:])
         s_k = torch.sum(self.coding_sampler.auxiliary_vars[k + 1:])

@@ -30,6 +30,7 @@ class VariationalPosterior:
         return dist.multivariate_normal.MultivariateNormal(loc=mean, covariance_matrix=covariance)
 
     def q_z_given_trajectory(self, aux_history, k):
+        # TODO Think there must be a bug here as with high epsilon this method causes things to go past the target
         b_k_minus_one = torch.sum(aux_history[:k], dim=0)
         s_k_minus_one = torch.sum(self.coding_sampler.auxiliary_vars[k:])
         s_k = torch.sum(self.coding_sampler.auxiliary_vars[k + 1:])

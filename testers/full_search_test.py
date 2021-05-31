@@ -10,6 +10,7 @@ from rec.distributions.CodingSampler import CodingSampler
 from rec.distributions.EmpiricalMixturePosterior_Parallel import EmpiricalMixturePosterior
 from rec.utils import kl_estimate_with_mc, plot_running_sum, plot_2d_distribution
 
+
 def get_parameters_for_search(target, omega, dim, epsilon=0.):
     coding_z_prior = CodingSampler(dim, n_auxiliary=1)
     try:
@@ -37,16 +38,19 @@ def run_search(target, omega):
     trajectories = torch.zeros((n_auxiliary, n_samples_per_aux, dim))
     greedy_traj = torch.zeros((n_auxiliary, dim))
     greedy_sample = torch.zeros(dim)
+    norm = 0
     for i in range(n_auxiliary):
         # sample aks and append to tensor
-        trajectories[i] = sampler.auxiliary_coding_dist(i).sample((n_samples_per_aux,))
-        trial_sample = greedy_sample + trajectories[i]
-        log_q = target.log_prob(trial_sample)
-        best_sample_idx = torch.argmax(log_q)
-        greedy_sample = trial_sample[best_sample_idx]
-        greedy_traj[i] = trajectories[i][best_sample_idx]
+        samples = sampler.auxiliary_coding_dist(i).sample((n_samples_per_aux,))
+        norm_of_samples = torch.norm(samples, dim=1, p=2)
+        norm += torch.max(norm_of_samples)
+        # trial_sample = greedy_sample + trajectories[i]
+        # log_q = target.log_prob(trial_sample)
+        # best_sample_idx = torch.argmax()
+        # greedy_sample = trial_sample[best_sample_idx]
+        # greedy_traj[i] = trajectories[i][best_sample_idx]
 
-    return trajectories, greedy_sample, greedy_traj
+    return norm
 
 
 if __name__ == '__main__':
@@ -61,4 +65,4 @@ if __name__ == '__main__':
     blr.posterior_update()
     target = blr.weight_posterior
 
-    trajectories, greedy_sample, greedy_traj = run_search(target, 8)
+    norm = run_search(target, 8)

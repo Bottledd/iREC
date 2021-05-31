@@ -3,14 +3,14 @@ import math
 import matplotlib.pyplot as plt
 import torch
 import torch.distributions as dist
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 
 from models.BayesianLinRegressor import BayesLinRegressor
 from rec.distributions.CodingSampler import CodingSampler
 from rec.distributions.VariationalPosterior import VariationalPosterior
 from rec.samplers.GreedySampling import GreedySampler
 from rec.samplers.ImportanceSampling import ImportanceSampler
-from rec.utils import kl_estimate_with_mc, plot_running_sum, plot_2d_distribution
+from rec.utils import kl_estimate_with_mc, plot_running_sum_1d, plot_running_sum_2d, plot_2d_distribution
 
 
 class Encoder:
@@ -30,7 +30,7 @@ class Encoder:
         # first try with torch distributions
 
         # create dummy coding object to compute kl with target
-        coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1, var=5)
+        coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1, var=1)
         try:
             kl_q_p = dist.kl_divergence(target, coding_z_prior)
             print(f"{kl_q_p}")
@@ -46,9 +46,9 @@ class Encoder:
         # instantiate the coding sampler and auxiliary posterior
         instance_coding_sampler = coding_sampler(problem_dimension=self.problem_dimension,
                                                  n_auxiliary=self.n_auxiliary,
-                                                 sigma_setting='power_rule',
+                                                 sigma_setting='uniform',
                                                  power_rule_exponent=0.79,
-                                                 var=5
+                                                 var=1
                                                  )
 
         self.auxiliary_posterior = auxiliary_posterior(target,
@@ -147,8 +147,8 @@ class Encoder:
 if __name__ == '__main__':
     #torch.set_default_tensor_type(torch.DoubleTensor)
     initial_seed = 100
-    blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
-                            prior_alpha=0.01,
+    blr = BayesLinRegressor(prior_mean=torch.tensor([0.0]),
+                            prior_alpha=0.001,
                             signal_std=1,
                             num_targets=10,
                             seed=initial_seed)
@@ -174,9 +174,9 @@ if __name__ == '__main__':
     #     0.0646, 0.0635, 0.0624, 0.0602, 0.0577, 0.0542, 0.0408])
 
     z, indices = encoder.run_encoder()
-    print(target.log_prob(z))
-    print(sum(encoder.aux_var_kl))
-    plot_2d_distribution(target)
-    plot_running_sum(encoder.selected_samples, plot_index_labels=False)
-    plt.plot(z[0], z[1], 'o')
-    plt.show()
+    # print(target.log_prob(z))
+    # print(sum(encoder.aux_var_kl))
+    # plot_2d_distribution(target)
+    # plot_running_sum(encoder.selected_samples, plot_index_labels=False)
+    # plt.plot(z[0], z[1], 'o')
+    # plt.show()

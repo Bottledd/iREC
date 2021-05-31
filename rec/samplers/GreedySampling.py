@@ -24,7 +24,7 @@ class GreedySampler:
 
     def get_samples_from_coder(self):
         torch.manual_seed(self.seed)
-        print(torch.random.get_rng_state())
+
         # sample from coding distribution
         samples = self.coding.sample((self.num_samples,))
 

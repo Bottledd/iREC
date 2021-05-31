@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from models.BayesianLinRegressor import BayesLinRegressor
 from rec.utils import kl_estimate_with_mc, plot_2d_distribution
-
+import numpy as np
 
 class JointOptimisation(nn.Module):
     def __init__(self, n_auxiliaries, n_trajectories, dim, target, omega):
@@ -22,6 +22,7 @@ class JointOptimisation(nn.Module):
         self.register_buffer("z_sample", target.mean)
         self.register_buffer('total_var', torch.ones((1,)))
         self.pre_softmax_aux_vars = nn.Parameter(dist.normal.Normal(loc=0., scale=1).sample((n_auxiliaries,)))
+        #self.pre_softmax_aux_vars = nn.Parameter(torch.ones(n_auxiliaries))
         self.kl_history = []
 
     def get_aux_post_params(self, index):
@@ -52,6 +53,7 @@ class JointOptimisation(nn.Module):
         if index < self.n_auxiliaries - 1:
             kl = dist.kl_divergence(self.aux_posterior(index), self.aux_prior(index))
             loss = 0.5 * (kl - self.omega) ** 2
+            # loss = torch.norm(kl - self.omega, p=np.inf)
         else:
             final_var_prior = self.aux_prior(index=self.n_auxiliaries - 1)
             samples = final_var_prior.rsample((self.n_trajectories,))
@@ -67,9 +69,9 @@ class JointOptimisation(nn.Module):
     #     log_probs = target.log_prob(z)
     #     return log_probs
 
-    def run_optimiser(self, epochs=5000):
+    def run_optimiser(self, epochs=1000):
         #optimiser = torch.optim.SGD(self.parameters(), lr=1e-3, momentum=0.9)
-        optimiser = torch.optim.Adam(self.parameters(), lr=2e-2)
+        optimiser = torch.optim.Adam(self.parameters(), lr=3e-3)
         pbar = tqdm(range(epochs))
         for i in pbar:
             losses = torch.zeros((self.n_trajectories, self.n_auxiliaries)).to(self.pre_softmax_aux_vars.device)
@@ -104,13 +106,13 @@ class JointOptimisation(nn.Module):
 
 
 if __name__ == '__main__':
-    # torch.set_default_tensor_type(torch.DoubleTensor)
-    initial_seed = 100
+    torch.set_default_tensor_type(torch.DoubleTensor)
+    initial_seed_target = 100
     blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
-                            prior_alpha=0.01,
-                            signal_std=1,
-                            num_targets=10,
-                            seed=initial_seed)
+                            prior_alpha=0.05,
+                            signal_std=10,
+                            num_targets=1,
+                            seed=initial_seed_target)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
     blr.posterior_update()
@@ -122,7 +124,7 @@ if __name__ == '__main__':
     dim = 2
     prior_var = 1
     omega = 8
-    n_trajectories = 100
+    n_trajectories = 256
 
     # first try to compute KL between q(z) and p(z) with torch.distributions
     try:
