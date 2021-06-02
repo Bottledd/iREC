@@ -34,9 +34,10 @@ class Encoder:
         coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1, var=1)
         try:
             kl_q_p = dist.kl_divergence(target, coding_z_prior)
+            print(f"{kl_q_p}")
         except:
             # need to do MC estimate
-            kl_q_p = kl_estimate_with_mc(target, coding_z_prior, dim=0, num_samples=1000000)
+            kl_q_p = kl_estimate_with_mc(target, coding_z_prior, dim=0, num_samples=10000)
 
         # compute parameters for auxiliary method
         self.target = target
@@ -149,8 +150,8 @@ class Encoder:
 if __name__ == '__main__':
     torch.set_default_tensor_type(torch.DoubleTensor)
     initial_seed_target = 100
-    blr = BayesLinRegressor(prior_mean=torch.tensor([0.0]),
-                            prior_alpha=0.0001,
+    blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
+                            prior_alpha=0.001,
                             signal_std=10,
                             num_targets=10,
                             seed=initial_seed_target)
@@ -177,25 +178,20 @@ if __name__ == '__main__':
                       auxiliary_posterior,
                       omega,
                       n_samples_from_target,
-                      epsilon=0.5,
+                      epsilon=0.,
                       )
     #
-    # encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.0148, 0.0148, 0.0148, 0.0148, 0.0148, 0.0148, 0.0148, 0.0148, 0.0148,
-    #     0.0148, 0.0148, 0.0149, 0.0148, 0.0148, 0.0148, 0.0148, 0.0148, 0.0148,
-    #     0.0148, 0.0148, 0.0147, 0.0147, 0.0148, 0.0148, 0.0149, 0.0147, 0.0147,
-    #     0.0147, 0.0147, 0.0149, 0.0147, 0.0147, 0.0147, 0.0149, 0.0147, 0.0148,
-    #     0.0147, 0.0147, 0.0147, 0.0146, 0.0147, 0.0148, 0.0147, 0.0148, 0.0147,
-    #     0.0147, 0.0147, 0.0148, 0.0148, 0.0147, 0.0145, 0.0145, 0.0144, 0.0144,
-    #     0.0149, 0.0144, 0.0145, 0.0146, 0.0143, 0.0144, 0.0146, 0.0147, 0.0137,
-    #     0.0134, 0.0132, 0.0128, 0.0128, 0.0215])
+    # encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([2.6610e-02, 8.3137e-02, 1.0406e-01, 1.1048e-01, 1.0939e-01, 1.0591e-01,
+    #         1.1909e-01, 1.2233e-01, 1.1176e-01, 7.6761e-02, 3.0398e-02, 8.0384e-05,
+    #         3.0745e-08, 1.7882e-11, 3.6674e-15])
 
     z, indices = encoder.run_encoder()
     print(target.log_prob(z))
     print(sum(encoder.aux_var_kl))
-    #plot_2d_distribution(target)
-    plot_1d_distribution(target)
-    # plot_running_sum(encoder.selected_samples, plot_index_labels=False)
+    plot_2d_distribution(target)
+    # plot_1d_distribution(target)
+    plot_running_sum_2d(encoder.selected_samples, plot_index_labels=False)
     # plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
     #          'x')
-    plt.plot(z, torch.exp(target.log_prob(z)), 'o')
+    # plt.plot(z, torch.exp(target.log_prob(z)), 'o')
     plt.show()

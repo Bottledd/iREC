@@ -30,6 +30,7 @@ class EmpiricalMixturePosterior:
         variance_scalar = self.coding_sampler.auxiliary_vars[k] * s_k / s_k_minus_one
 
         mean = (z_samples - b_k) * mean_scalar
+        #mean = z_samples * 0 + torch.tensor([30, 0])
         covariance = torch.eye(self.problem_dimension) * variance_scalar
 
         return mean, covariance
@@ -42,6 +43,8 @@ class EmpiricalMixturePosterior:
         """
         if log_prob:
             return torch.softmax(previous_conditional_joints, dim=0)
+            # below is using uniform mixing weights - seems to help
+            #return torch.softmax(0 * previous_conditional_joints, dim=0)
         else:
             total_weight = torch.sum(previous_conditional_joints, dim=0)
             return previous_conditional_joints / total_weight

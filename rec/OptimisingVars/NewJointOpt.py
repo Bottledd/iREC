@@ -3,28 +3,25 @@ import torch
 import torch.distributions as dist
 import torch.nn as nn
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+from tqdm import trange
 from models.BayesianLinRegressor import BayesLinRegressor
 from rec.utils import kl_estimate_with_mc, plot_2d_distribution
 import numpy as np
 
-class JointOptimisation(nn.Module):
-    def __init__(self, n_auxiliaries, n_trajectories, dim, target, omega, total_kl):
-        super(JointOptimisation, self).__init__()
+class NewJointOpt(nn.Module):
+    def __init__(self, z_sample, omega, n_auxiliaries, n_trajectories, total_kl, total_var):
+        super(NewJointOpt, self).__init__()
         self.n_auxiliaries = n_auxiliaries
         self.n_trajectories = n_trajectories
-        self.dim = dim
-        self.target = target
         self.omega = omega
-        self.optimise_index = 0
-        self.register_buffer("trajectories", torch.zeros((n_trajectories, n_auxiliaries, dim)))
-        # self.register_buffer("z_sample", target.sample((1,)))
-        self.register_buffer("z_sample", target.mean)
-        self.register_buffer('total_var', torch.ones((1,)))
-        self.pre_softmax_aux_vars = nn.Parameter(dist.normal.Normal(loc=0., scale=1).sample((n_auxiliaries,)))
+        self.register_buffer("z_sample", z_sample)
+        self.total_var = total_var
+        self.dim = z_sample.shape[0]
+        #self.pre_softmax_aux_vars = nn.Parameter(dist.normal.Normal(loc=0., scale=1).sample((n_auxiliaries,)))
+        self.register_buffer('trajectories', torch.zeros(n_trajectories, n_auxiliaries, self.dim))
         self.pre_softmax_aux_vars = nn.Parameter(torch.ones(n_auxiliaries))
         self.kl_history = []
-        self.remaining_kl = total_kl
+        self.total_kl = float(total_kl)
 
     def get_aux_post_params(self, index):
         sigma_ks = nn.functional.softmax(self.pre_softmax_aux_vars, dim=0)
@@ -49,42 +46,37 @@ class JointOptimisation(nn.Module):
         covariance = torch.eye(self.dim).to(self.pre_softmax_aux_vars.device) * variance_scalar
         return dist.multivariate_normal.MultivariateNormal(loc=mean, covariance_matrix=covariance)
 
-    def loss_function(self, index):
+    def loss_function(self, index, remaining_kl):
         # kl = kl_estimate_with_mc(self.aux_posterior, self.aux_prior, rsample=True, num_samples=100)
-        if index < self.n_auxiliaries - 1:
-            kl = dist.kl_divergence(self.aux_posterior(index), self.aux_prior(index))
-            kl_loss = 0.5 * (kl - self.omega) ** 2
+        aux_kl = dist.kl_divergence(self.aux_posterior(index - 1), self.aux_prior(index - 1))
+        kl_loss = (aux_kl - self.omega) ** 2
+        remaining_kl_loss = ((remaining_kl - aux_kl) - (self.n_auxiliaries - index - 1) * self.omega) ** 2
+        loss = torch.mean(kl_loss + remaining_kl_loss)
+        return loss, torch.mean(aux_kl)
 
-        return kl_loss, kl
-
-    # def final_aux_loss(self):
-    #     final_var_prior = self.aux_prior(index=self.n_auxiliaries-1)
-    #     samples = final_var_prior.rsample(self.n_auxiliaries)
-    #     z = self.trajectories + samples
-    #     log_probs = target.log_prob(z)
-    #     return log_probs
-
-    def run_optimiser(self, epochs=1000):
-        #optimiser = torch.optim.SGD(self.parameters(), lr=1e-3, momentum=0.9)
-        optimiser = torch.optim.Adam(self.parameters(), lr=3e-3)
-        pbar = tqdm(range(epochs))
+    def run_optimiser(self, epochs=8000):
+        optimiser = torch.optim.Adam(self.parameters(), lr=1e-2)
+        pbar = trange(epochs)
         for i in pbar:
-            losses = torch.zeros((self.n_trajectories, self.n_auxiliaries)).to(self.pre_softmax_aux_vars.device)
+            losses = torch.zeros(self.n_auxiliaries - 1).to(self.pre_softmax_aux_vars.device)
+            kls = torch.zeros(self.n_auxiliaries - 1).to(self.pre_softmax_aux_vars.device)
+            remaining_kl = self.total_kl
             # reset optimiser
             optimiser.zero_grad()
-            for k in range(self.n_auxiliaries-1):
+            for k in range(1, self.n_auxiliaries):
                 # compute loss for a_k
-                current_loss, aux_kl = self.loss_function(index=k)
-                losses[:, k] = current_loss
-
+                loss, aux_kl = self.loss_function(index=k, remaining_kl=remaining_kl)
+                losses[k - 1] = loss
+                kls[k - 1] = aux_kl
+                remaining_kl -= aux_kl
 
                 # sample trajectory
                 if k < self.n_trajectories - 1:
-                    self.trajectories[:, k] = self.aux_posterior(index=k).sample()
+                    self.trajectories[:, k - 1] = self.aux_posterior(index=k - 1).sample()
 
             mean_loss = torch.mean(losses)
-            pbar.set_description(f"The mean loss is {mean_loss}")
-            #print(f"The mean loss is {mean_loss}")
+            mean_kl = torch.mean(kls)
+            pbar.set_description(f"The mean loss is {mean_loss:.5f}. The mean KL is: {mean_kl:.5f}")
             mean_loss.backward()
             optimiser.step()
         return nn.functional.softmax(self.pre_softmax_aux_vars.detach(), dim=0)
@@ -103,25 +95,24 @@ class JointOptimisation(nn.Module):
 
 
 if __name__ == '__main__':
-    torch.set_default_tensor_type(torch.DoubleTensor)
-    initial_seed_target = 100
-    blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
-                            prior_alpha=0.05,
-                            signal_std=10,
-                            num_targets=1,
-                            seed=initial_seed_target)
-    blr.sample_feature_inputs()
-    blr.sample_regression_targets()
-    blr.posterior_update()
-    target = blr.weight_posterior
+    # initial_seed_target = 0
+    # blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
+    #                         prior_alpha=0.01,
+    #                         signal_std=5,
+    #                         num_targets=1,
+    #                         seed=initial_seed_target)
+    # blr.sample_feature_inputs()
+    # blr.sample_regression_targets()
+    # blr.posterior_update()
+    # target = blr.weight_posterior
+    # torch.set_default_tensor_type(torch.DoubleTensor)
+    target = dist.multivariate_normal.MultivariateNormal(loc=torch.tensor([15.]), covariance_matrix=0.25 * torch.eye(1))
+    z_sample = target.mean
 
-    # plot_2d_distribution(target)
-    # plt.show()
-
-    dim = 2
-    prior_var = 1
+    dim = z_sample.shape[0]
+    prior_var = 1.
     omega = 8
-    n_trajectories = 256
+    n_trajectories = 512
 
     # first try to compute KL between q(z) and p(z) with torch.distributions
     try:
@@ -136,8 +127,12 @@ if __name__ == '__main__':
     n_auxiliaries = math.ceil(kl_q_p / omega)
     print(f"Num of Aux is: {n_auxiliaries}")
 
-    optimising = JointOptimisation(n_auxiliaries, n_trajectories, dim, target, omega, kl_q_p)
+    optimising = NewJointOpt(z_sample, omega, n_auxiliaries, n_trajectories, kl_q_p, prior_var)
     best_vars = optimising.run_optimiser()
-    plt.plot(best_vars, 'o')
+    fig, axes = plt.subplots(1, 2, figsize=(9, 5))
+
+    axes[0].plot(best_vars)
+    axes[1].plot(best_vars / (1 - torch.cumsum(best_vars, dim=0)))
+
+    fig.tight_layout()
     plt.show()
-    optimising.compute_run_of_kls()
