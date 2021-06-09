@@ -1,16 +1,15 @@
 import math
-
 import matplotlib.pyplot as plt
 import torch
 import torch.distributions as dist
 from tqdm import tqdm
-
 from models.BayesianLinRegressor import BayesLinRegressor
 from rec.distributions.CodingSampler import CodingSampler
 from rec.distributions.EmpiricalMixturePosterior import EmpiricalMixturePosterior
 from rec.samplers.GreedySampling import GreedySampler
 from rec.samplers.ImportanceSampling import ImportanceSampler
-from rec.utils import kl_estimate_with_mc, plot_running_sum, plot_2d_distribution
+from rec.utils import kl_estimate_with_mc, plot_running_sum_1d, plot_running_sum_2d, plot_2d_distribution, plot_1d_distribution, plot_samples_in_2d
+from rec.OptimisingVars.FinalJointOptimiser import FinalJointOptimiser
 
 
 class Encoder:
@@ -31,13 +30,15 @@ class Encoder:
         # first try with torch distributions
 
         # create dummy coding object to compute kl with target
-        coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1)
+        coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1, var=1)
         try:
             kl_q_p = dist.kl_divergence(target, coding_z_prior)
             print(f"{kl_q_p}")
         except:
             # need to do MC estimate
-            kl_q_p = kl_estimate_with_mc(target, coding_z_prior)
+            kl_q_p = kl_estimate_with_mc(target, coding_z_prior, dim=0, num_samples=10000)
+
+        self.total_kl = kl_q_p
 
         # compute parameters for auxiliary method
         self.target = target
@@ -46,7 +47,7 @@ class Encoder:
 
         # instantiate the coding sampler and auxiliary posterior
         instance_coding_sampler = coding_sampler(problem_dimension=self.problem_dimension,
-                                                 n_auxiliary=self.n_auxiliary)
+                                                 n_auxiliary=self.n_auxiliary, var=1)
 
         self.auxiliary_posterior = auxiliary_posterior(target,
                                                        n_samples_from_target,
@@ -94,8 +95,8 @@ class Encoder:
         pbar = tqdm(range(self.n_auxiliary), position=0, leave=True)
         for i in pbar:
             # set the seed
-            # seed = (i * 10e4) + self.selected_samples_indices[i-1]
-            seed = i
+            seed = i + self.initial_seed
+
             # create new auxiliary prior distribution, p(a_k)
             auxiliary_prior = self.auxiliary_posterior.coding_sampler.auxiliary_coding_dist(i)
 
@@ -123,8 +124,8 @@ class Encoder:
                 kl_estimate = kl_estimate_with_mc(target=auxiliary_conditional_posterior, coder=auxiliary_prior,
                                                   num_samples=1000)
                 self.aux_var_kl[i] = kl_estimate
-                pbar.set_description(f"KL of aux {i+1} is {kl_estimate}")
                 # print(f"KL of aux {i+1} is {kl_estimate}")
+                pbar.set_description(f"KL of aux {i + 1} is {kl_estimate}")
                 # update stored samples, indices and log probs
                 self.update_stored_samples(i, indices, samples, auxiliary_prior, auxiliary_conditional_posterior)
             else:
@@ -148,13 +149,13 @@ class Encoder:
 
 
 if __name__ == '__main__':
-    #torch.set_default_tensor_type(torch.DoubleTensor)
-    initial_seed = 100
-    blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
-                            prior_alpha=0.0001,
-                            signal_std=10,
-                            num_targets=5,
-                            seed=initial_seed)
+    torch.set_default_tensor_type(torch.DoubleTensor)
+    initial_seed_target = 0
+    blr = BayesLinRegressor(prior_mean=torch.zeros(50),
+                            prior_alpha=1,
+                            signal_std=1,
+                            num_targets=100,
+                            seed=initial_seed_target)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
     blr.posterior_update()
@@ -164,7 +165,9 @@ if __name__ == '__main__':
     auxiliary_posterior = EmpiricalMixturePosterior
     selection_sampler = GreedySampler
     omega = 8
-    n_samples_from_target = 1000
+    n_samples_from_target = 100
+
+    initial_seed = 0
 
     encoder = Encoder(target,
                       initial_seed,
@@ -173,23 +176,42 @@ if __name__ == '__main__':
                       auxiliary_posterior,
                       omega,
                       n_samples_from_target,
-                      epsilon=0.,
+                      epsilon=0.3,
                       )
-    # encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136,
-    #         0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0137, 0.0137,
-    #         0.0137, 0.0137, 0.0137, 0.0137, 0.0137, 0.0138, 0.0138, 0.0138, 0.0139,
-    #         0.0139, 0.0139, 0.0139, 0.0140, 0.0140, 0.0140, 0.0141, 0.0141, 0.0141,
-    #         0.0142, 0.0142, 0.0142, 0.0143, 0.0143, 0.0143, 0.0144, 0.0144, 0.0145,
-    #         0.0145, 0.0146, 0.0147, 0.0148, 0.0149, 0.0150, 0.0151, 0.0153, 0.0155,
-    #         0.0157, 0.0159, 0.0162, 0.0165, 0.0169, 0.0172, 0.0174, 0.0175, 0.0173,
-    #         0.0165, 0.0150, 0.0125, 0.0091, 0.0063, 0.0043, 0.0031, 0.0024, 0.0074,
-    #         0.0074, 0.0074])
 
+    z_sample = target.mean
+    n_auxiliaries = encoder.n_auxiliary
+    kl_q_p = encoder.total_kl
+
+    option = 1
+
+    if option == 1:
+        encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.3094, 0.2134, 0.1457, 0.1002, 0.0698, 0.0491, 0.0351, 0.0255, 0.0194,
+        0.0156, 0.0085, 0.0040, 0.0025, 0.0019])
+
+    elif option == 2:
+        print(f"First Optimise Prior Variances!")
+        optimising = FinalJointOptimiser(z_sample, omega, n_auxiliaries, kl_q_p, n_trajectories=1000, total_var=1)
+        encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = optimising.run_optimiser(epochs=5000 // n_auxiliaries)
+    else:
+        pass
+
+    print(f"Run Encoder!")
     z, indices = encoder.run_encoder()
-    print(target.log_prob(z))
-    print(sum(encoder.aux_var_kl))
-    plot_2d_distribution(target)
-    plot_running_sum(encoder.selected_samples, plot_index_labels=False)
-    plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
-             'x')
+    mahalobonis_dist = torch.sqrt((target.mean - z).T@ target.covariance_matrix @ (target.mean - z))
+    print(f"The MSE is: {blr.measure_performance(z, type='MSE')}\n"
+          f"The MAE is: {blr.measure_performance(z, type='MAE')}\n"
+          f"The Mahalobonis distance is: {mahalobonis_dist}\n"
+          f"The MSE of the mean is: {blr.measure_performance(target.mean, type='MSE')}\n"
+          f"The MAE of the mean is: {blr.measure_performance(target.mean, type='MAE')}")
+    plot_samples_in_2d(target=target)
+    plot_samples_in_2d(empirical_samples=encoder.auxiliary_posterior.empirical_samples)
+    plot_samples_in_2d(coded_sample=z)
+
+    # plot_2d_distribution(target)
+    plot_running_sum_2d(encoder.selected_samples, plot_index_labels=True)
+    # plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
+    #          'x')
+    # plt.plot(z[0], z[1], 'o')
+    # # plt.plot(z, torch.exp(target.log_prob(z)), 'o')
     plt.show()

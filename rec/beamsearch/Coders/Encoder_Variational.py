@@ -7,10 +7,10 @@ from tqdm import tqdm
 
 from models.BayesianLinRegressor import BayesLinRegressor
 from rec.beamsearch.distributions.CodingSampler import CodingSampler
-from rec.beamsearch.distributions.EmpiricalMixturePosterior import EmpiricalMixturePosterior
+from rec.beamsearch.distributions.VariationalPosterior import VariationalPosterior
 from rec.beamsearch.samplers.GreedySampling import GreedySampler
 from rec.beamsearch.utils import convert_flattened_indices
-from rec.utils import kl_estimate_with_mc, plot_running_sum_1d, plot_running_sum_2d, plot_2d_distribution, plot_1d_distribution, plot_samples_in_2d
+from rec.utils import kl_estimate_with_mc, compute_variational_posterior, plot_samples_in_2d, plot_running_sum_2d
 from rec.OptimisingVars.FinalJointOptimiser import FinalJointOptimiser
 
 class Encoder:
@@ -21,7 +21,6 @@ class Encoder:
                  selection_sampler,
                  auxiliary_posterior,
                  omega,
-                 n_samples_from_target,
                  beamwidth,
                  epsilon=0,
                  ):
@@ -49,7 +48,6 @@ class Encoder:
         self.target = target
         self.n_auxiliary = math.ceil(kl_q_p / omega)
         self.n_samples_per_aux = math.ceil(torch.exp(torch.tensor(omega * (1 + epsilon))))
-        self.n_samples_from_target = n_samples_from_target
 
         # instantiate the coding sampler and auxiliary posterior
         instance_coding_sampler = coding_sampler(problem_dimension=self.problem_dimension,
@@ -57,8 +55,8 @@ class Encoder:
                                                  var=1)
 
         self.auxiliary_posterior = auxiliary_posterior(target,
-                                                       n_samples_from_target,
-                                                       instance_coding_sampler)
+                                                       instance_coding_sampler,
+                                                       beamwidth=self.beamwidth)
 
         # auxiliary samples that are selected
         # keep track of samples themselves and indices separately so we can check to ensure they agree
@@ -68,9 +66,6 @@ class Encoder:
         # need to keep track of joint probabilities
         self.selected_samples_joint_coding_log_prob = torch.zeros((self.beamwidth,))
         self.selected_samples_joint_posterior_log_prob = torch.zeros((self.beamwidth,))
-
-        # need to keep track of mixing weights
-        self.selected_samples_mixing_weights = torch.zeros((self.beamwidth, n_samples_from_target,))
 
         # store selection sampler object
         self.selection_sampler = selection_sampler
@@ -98,10 +93,6 @@ class Encoder:
                 self.selected_samples_joint_coding_log_prob[:n_samples_to_add] += coding_log_probs
                 self.selected_samples_joint_posterior_log_prob[:n_samples_to_add] += auxiliary_posterior_log_prob
 
-                # update mixture_weights
-                for i, (sample) in enumerate(samples):
-                    self.selected_samples_mixing_weights[i] = auxiliary_posterior_dist.component_distribution.log_prob(
-                        sample)
         else:
             # number of samples to add to beam
             n_samples_to_add = samples.shape[0]
@@ -123,13 +114,6 @@ class Encoder:
                 self.selected_samples_joint_coding_log_prob[:n_samples_to_add] += coding_log_probs
                 self.selected_samples_joint_posterior_log_prob[:n_samples_to_add] += auxiliary_posterior_log_prob
 
-                # update mixture_weights
-                new_mixing_weights = torch.zeros((n_samples_to_add, self.n_samples_from_target))
-                for i, (sample, beam) in enumerate(zip(samples, beam_indices)):
-                    new_mixing_weights[i] = self.selected_samples_mixing_weights[beam] + \
-                                            auxiliary_posterior_dist.component_distribution.log_prob(sample)[beam]
-                self.selected_samples_mixing_weights[:n_samples_to_add] = new_mixing_weights
-
     def run_encoder(self):
         for i in tqdm(range(self.n_auxiliary)):
             # set the seed
@@ -148,10 +132,7 @@ class Encoder:
                 # compute conditional posterior distribution, q(a_k | a_{1:k-1})
                 # note since all starting values are zero we can select the 0th index for many
                 auxiliary_conditional_posterior = self.auxiliary_posterior.q_ak_given_history(self.selected_samples[0],
-                                                                                              i,
-                                                                                              self.selected_samples_mixing_weights[
-                                                                                                  0],
-                                                                                              log_prob=True)
+                                                                                              i)
 
                 # create new selection sampler object
                 selection_sampler = self.selection_sampler(coding=auxiliary_prior,
@@ -176,28 +157,24 @@ class Encoder:
                 self.update_stored_samples(i, samples=samples, sample_indices=indices, coding_dist=auxiliary_prior,
                                            auxiliary_posterior_dist=auxiliary_conditional_posterior)
 
+                self.auxiliary_posterior.q_z_given_trajectory(self.selected_samples, i)
+
             elif self.n_auxiliary - 1 > i > 0:
                 # first need to ignore any unfilled beams from previous run, i.e. mask 0 values
                 mask = self.selected_samples[:, i - 1].ne(0)
-                mixing_weights_mask = self.selected_samples_mixing_weights.ne(0)
                 expanded_mask = torch.repeat_interleave(mask[:, None, :], self.n_auxiliary, dim=1)
                 single_dim_mask = mask[:, 0]
                 pruned_beams = torch.masked_select(self.selected_samples, expanded_mask).reshape(-1, self.n_auxiliary,
                                                                                                  self.problem_dimension)
-                pruned_mixing_weights = torch.masked_select(self.selected_samples_mixing_weights,
-                                                            mixing_weights_mask).reshape(-1, self.n_samples_from_target)
                 pruned_coding_log_prob = torch.masked_select(self.selected_samples_joint_coding_log_prob,
                                                              single_dim_mask)
                 pruned_posterior_log_prob = torch.masked_select(self.selected_samples_joint_posterior_log_prob,
                                                                 single_dim_mask)
                 # need to expand the beams to have B*M elements
                 tiled_beams = torch.tile(pruned_beams, (self.n_samples_per_aux, 1, 1))
-                tiled_mixing_weights = torch.tile(pruned_mixing_weights, (self.n_samples_per_aux, 1))
                 # compute conditional posterior distribution, q(a_k | a_{1:k-1})
                 auxiliary_conditional_posterior = self.auxiliary_posterior.q_ak_given_history(tiled_beams,
-                                                                                              i,
-                                                                                              tiled_mixing_weights,
-                                                                                              log_prob=True)
+                                                                                              i)
                 # need to see if masked B_hat * M > B
                 if self.beamwidth > tiled_beams.shape[0]:
                     n_new_beams = tiled_beams.shape[0]
@@ -227,14 +204,14 @@ class Encoder:
                 # make new auxiliary distribution using current beams
                 auxiliary_conditional_posterior_untiled = self.auxiliary_posterior.q_ak_given_history(
                     self.selected_samples[beam_indices],
-                    i,
-                    self.selected_samples_mixing_weights[beam_indices],
-                    log_prob=True)
+                    i)
                 # update stored samples, indices and log probs
 
                 self.update_stored_samples(i, beam_indices=beam_indices, sample_indices=sample_indices, samples=samples,
                                            coding_dist=auxiliary_prior,
                                            auxiliary_posterior_dist=auxiliary_conditional_posterior_untiled)
+
+                self.auxiliary_posterior.q_z_given_trajectory(self.selected_samples, i)
             else:
                 # cannot compute a conditional posterior for final sample
                 selection_sampler = self.selection_sampler(coding=auxiliary_prior,
@@ -271,52 +248,56 @@ if __name__ == '__main__':
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
     blr.posterior_update()
-    target = blr.weight_posterior
+    true_target = blr.weight_posterior
 
     coding_sampler = CodingSampler
-    auxiliary_posterior = EmpiricalMixturePosterior
+    auxiliary_posterior = VariationalPosterior
     selection_sampler = GreedySampler
     omega = 8
-    n_samples_from_target = 10
-    beamwidth = 50
 
+    var_target = compute_variational_posterior(true_target)
     initial_seed = 0
 
-    encoder = Encoder(target,
+    beamwidth = 2
+
+    encoder = Encoder(var_target,
                       initial_seed,
                       coding_sampler,
                       selection_sampler,
                       auxiliary_posterior,
                       omega,
-                      n_samples_from_target,
                       epsilon=0.,
                       beamwidth=beamwidth)
 
-    z_sample = target.mean
     n_auxiliaries = encoder.n_auxiliary
     kl_q_p = encoder.total_kl
 
-    pre_optimised_vars = True
+    option = 3
 
-    if pre_optimised_vars:
-        encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.9188, 0.0682, 0.0130])
-    else:
+    if option == 1:
+        encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor(
+            [0.3094, 0.2134, 0.1457, 0.1002, 0.0698, 0.0491, 0.0351, 0.0255, 0.0194,
+             0.0156, 0.0085, 0.0040, 0.0025, 0.0019])
+
+    elif option == 2:
         print(f"First Optimise Prior Variances!")
         optimising = FinalJointOptimiser(z_sample, omega, n_auxiliaries, kl_q_p, n_trajectories=1000, total_var=1)
-        encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = optimising.run_optimiser(epochs=1000)
+        encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = optimising.run_optimiser(
+            epochs=5000 // n_auxiliaries)
+    else:
+        pass
 
     z, indices = encoder.run_encoder()
-    best_sample_idx = torch.argmax(target.log_prob(z))
+    best_sample_idx = torch.argmax(true_target.log_prob(z))
     best_sample = z[best_sample_idx]
-    mahalobonis_dist = torch.sqrt((target.mean - best_sample).T@target.covariance_matrix @(target.mean - best_sample))
+    mahalobonis_dist = torch.sqrt((true_target.mean - best_sample).T@true_target.covariance_matrix @(true_target.mean - best_sample))
     print(f"The MSE is: {blr.measure_performance(best_sample, type='MSE')}\n"
           f"The MAE is: {blr.measure_performance(best_sample, type='MAE')}\n"
           f"The Mahalobonis distance is: {mahalobonis_dist}\n"
-          f"The MSE of the mean is: {blr.measure_performance(target.mean, type='MSE')}\n"
-          f"The MAE of the mean is: {blr.measure_performance(target.mean, type='MAE')}\n"
-          f"log q(z)/p(z) is: {target.log_prob(best_sample) - encoder.auxiliary_posterior.coding_sampler.log_prob(best_sample)}")
-    plot_samples_in_2d(target=target)
-    plot_samples_in_2d(empirical_samples=encoder.auxiliary_posterior.empirical_samples)
+          f"The MSE of the mean is: {blr.measure_performance(true_target.mean, type='MSE')}\n"
+          f"The MAE of the mean is: {blr.measure_performance(true_target.mean, type='MAE')}\n"
+          f"log q(z)/p(z) is: {true_target.log_prob(best_sample) - encoder.auxiliary_posterior.coding_sampler.log_prob(best_sample)}")
+    plot_samples_in_2d(target=true_target)
     plot_samples_in_2d(coded_sample=best_sample)
     # plot_2d_distribution(target)
     plot_running_sum_2d(encoder.selected_samples[best_sample_idx], plot_index_labels=True)

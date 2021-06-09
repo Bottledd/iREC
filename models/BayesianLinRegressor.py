@@ -24,7 +24,7 @@ class BayesLinRegressor:
 
     def sample_feature_inputs(self):
         standard_normal = dst.Normal(loc=0.0, scale=1.0)
-        standard_normal = dst.Uniform(-5, 5)
+        # standard_normal = dst.Uniform(-10, 10)
         self.feature_targets = standard_normal.sample((self.num_targets, self.dim))
 
     def sample_regression_targets(self):
@@ -56,7 +56,6 @@ class BayesLinRegressor:
 
         self.weight_posterior = dst.MultivariateNormal(loc=post_mean, precision_matrix=post_precision)
 
-
     def plot_regression(self, num_lines=10):
         # plot 1d example
         plt.plot(self.feature_targets, self.regression_targets, 'o', label="observations")
@@ -72,6 +71,14 @@ class BayesLinRegressor:
         plt.gca().set_aspect('equal', adjustable='box')
         plt.show()
 
+    def plot_regression_with_uncertainty(self):
+        x_axis = torch.linspace(-10, 10, 1000)
+        mean, error = self.predictive_distribution(x_axis.reshape(-1, 1))
+        plt.plot(x_axis, mean, '-', color='red')
+        plt.fill_between(x_axis, mean - 1.96 * error ** 0.5, mean + 1.96 * error ** 0.5,
+                         color='gray', alpha=0.2)
+        plt.show()
+
     def plot_sampled_regressor(self, sample):
         # plot 1d example
         plt.plot(self.feature_targets, self.regression_targets, 'o', label="observations")
@@ -84,3 +91,32 @@ class BayesLinRegressor:
         plt.plot(x_axis, preds, '-', color='red')
         plt.gca().set_aspect('equal', adjustable='box')
         plt.show()
+
+    def predictive_distribution(self, inputs):
+        design_matrix = torch.hstack((inputs, torch.ones(inputs.shape[0], 1))) # shape [num_targets, dim]
+
+        mean = self.weight_posterior.mean
+        covariance = self.weight_posterior.covariance_matrix
+        mean_matrix = torch.tile(mean, (design_matrix.shape[0], 1))
+        covar_matrix = torch.tile(covariance, (design_matrix.shape[0], 1, 1))
+        predictive_mean = torch.einsum("ij, ij -> i", mean_matrix, design_matrix)
+        predictive_variance = torch.einsum("bi, bik, bk -> b", design_matrix, covar_matrix, design_matrix) + self.signal_std ** 2
+
+        return predictive_mean, predictive_variance
+
+    def measure_performance(self, weights, type='MSE'):
+        # broadcast to correct shapes
+        weight_matrix = torch.tile(weights, (self.feature_targets.shape[0], 1))
+
+        # make feature matrix
+        feature_matrix = torch.hstack((self.feature_targets, torch.ones(self.feature_targets.shape[0], 1)))
+
+        # multiply weights to features
+        feature_times_weights = torch.sum(weight_matrix * feature_matrix, dim=1)
+        if type == 'MSE':
+            sample_mse = (self.regression_targets - feature_times_weights) ** 2
+            return torch.mean(sample_mse)
+
+        elif type == 'MAE':
+            mae = torch.abs(self.regression_targets - feature_times_weights)
+            return torch.mean(mae)

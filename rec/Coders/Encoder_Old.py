@@ -3,14 +3,14 @@ import math
 import matplotlib.pyplot as plt
 import torch
 import torch.distributions as dist
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 
 from models.BayesianLinRegressor import BayesLinRegressor
 from rec.distributions.CodingSampler import CodingSampler
-from rec.distributions.VariationalPosterior import VariationalPosterior
+from rec.distributions.EmpiricalMixturePosterior_Old import EmpiricalMixturePosterior
 from rec.samplers.GreedySampling import GreedySampler
 from rec.samplers.ImportanceSampling import ImportanceSampler
-from rec.utils import kl_estimate_with_mc, plot_running_sum_1d, plot_running_sum_2d, plot_2d_distribution
+from rec.utils import kl_estimate_with_mc, plot_running_sum, plot_2d_distribution
 
 
 class Encoder:
@@ -21,7 +21,8 @@ class Encoder:
                  selection_sampler,
                  auxiliary_posterior,
                  omega,
-                 epsilon=0.1,
+                 n_samples_from_target,
+                 epsilon=0.,
                  ):
         # deduce dimension of problem from target mean
         self.problem_dimension = target.mean.shape[0]
@@ -30,7 +31,7 @@ class Encoder:
         # first try with torch distributions
 
         # create dummy coding object to compute kl with target
-        coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1, var=1)
+        coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1)
         try:
             kl_q_p = dist.kl_divergence(target, coding_z_prior)
             print(f"{kl_q_p}")
@@ -45,13 +46,10 @@ class Encoder:
 
         # instantiate the coding sampler and auxiliary posterior
         instance_coding_sampler = coding_sampler(problem_dimension=self.problem_dimension,
-                                                 n_auxiliary=self.n_auxiliary,
-                                                 sigma_setting='uniform',
-                                                 power_rule_exponent=0.79,
-                                                 var=1
-                                                 )
+                                                 n_auxiliary=self.n_auxiliary)
 
         self.auxiliary_posterior = auxiliary_posterior(target,
+                                                       n_samples_from_target,
                                                        instance_coding_sampler)
 
         # auxiliary samples that are selected
@@ -62,6 +60,9 @@ class Encoder:
         # need to keep track of joint probabilities
         self.selected_samples_joint_coding_log_prob = torch.zeros((1,))
         self.selected_samples_joint_posterior_log_prob = torch.zeros((1,))
+
+        # need to keep track of mixing weights
+        self.selected_samples_mixing_weights = torch.zeros((n_samples_from_target,))
 
         # store selection sampler object
         self.selection_sampler = selection_sampler
@@ -86,6 +87,9 @@ class Encoder:
             self.selected_samples_joint_coding_log_prob += coding_log_probs
             self.selected_samples_joint_posterior_log_prob += auxiliary_posterior_log_prob
 
+            # update mixture_weights - since these are the joint p(a_{1:k}|z) simply add on p(a_k | a_{1:k-1}, z_d)
+            self.selected_samples_mixing_weights += auxiliary_posterior_dist.component_distribution.log_prob(samples)
+
     def run_encoder(self):
         pbar = tqdm(range(self.n_auxiliary), position=0, leave=True)
         for i in pbar:
@@ -98,7 +102,9 @@ class Encoder:
             if i < self.n_auxiliary - 1:
                 # compute conditional posterior distribution, q(a_k | a_{1:k-1})
                 auxiliary_conditional_posterior = self.auxiliary_posterior.q_ak_given_history(self.selected_samples,
-                                                                                              i)
+                                                                                              i,
+                                                                                              self.selected_samples_mixing_weights,
+                                                                                              log_prob=True)
 
                 # create new selection sampler object
                 selection_sampler = self.selection_sampler(coding=auxiliary_prior,
@@ -117,13 +123,10 @@ class Encoder:
                 kl_estimate = kl_estimate_with_mc(target=auxiliary_conditional_posterior, coder=auxiliary_prior,
                                                   num_samples=1000)
                 self.aux_var_kl[i] = kl_estimate
+                pbar.set_description(f"KL of aux {i+1} is {kl_estimate}")
                 # print(f"KL of aux {i+1} is {kl_estimate}")
-                pbar.set_description(f"KL of aux {i + 1} is {kl_estimate}")
                 # update stored samples, indices and log probs
                 self.update_stored_samples(i, indices, samples, auxiliary_prior, auxiliary_conditional_posterior)
-
-                self.auxiliary_posterior.q_z_given_trajectory(self.selected_samples, i)
-
             else:
                 # cannot compute a conditional posterior for final sample
                 selection_sampler = self.selection_sampler(coding=auxiliary_prior,
@@ -147,10 +150,10 @@ class Encoder:
 if __name__ == '__main__':
     #torch.set_default_tensor_type(torch.DoubleTensor)
     initial_seed = 100
-    blr = BayesLinRegressor(prior_mean=torch.tensor([0.0]),
-                            prior_alpha=0.001,
-                            signal_std=1,
-                            num_targets=10,
+    blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
+                            prior_alpha=0.0001,
+                            signal_std=10,
+                            num_targets=5,
                             seed=initial_seed)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
@@ -158,9 +161,10 @@ if __name__ == '__main__':
     target = blr.weight_posterior
 
     coding_sampler = CodingSampler
-    auxiliary_posterior = VariationalPosterior
+    auxiliary_posterior = EmpiricalMixturePosterior
     selection_sampler = GreedySampler
     omega = 8
+    n_samples_from_target = 1000
 
     encoder = Encoder(target,
                       initial_seed,
@@ -168,15 +172,24 @@ if __name__ == '__main__':
                       selection_sampler,
                       auxiliary_posterior,
                       omega,
+                      n_samples_from_target,
                       epsilon=0.,
                       )
-    # encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.0670, 0.0669, 0.0669, 0.0667, 0.0665, 0.0661, 0.0659, 0.0656, 0.0651,
-    #     0.0646, 0.0635, 0.0624, 0.0602, 0.0577, 0.0542, 0.0408])
+    # encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136,
+    #         0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0136, 0.0137, 0.0137,
+    #         0.0137, 0.0137, 0.0137, 0.0137, 0.0137, 0.0138, 0.0138, 0.0138, 0.0139,
+    #         0.0139, 0.0139, 0.0139, 0.0140, 0.0140, 0.0140, 0.0141, 0.0141, 0.0141,
+    #         0.0142, 0.0142, 0.0142, 0.0143, 0.0143, 0.0143, 0.0144, 0.0144, 0.0145,
+    #         0.0145, 0.0146, 0.0147, 0.0148, 0.0149, 0.0150, 0.0151, 0.0153, 0.0155,
+    #         0.0157, 0.0159, 0.0162, 0.0165, 0.0169, 0.0172, 0.0174, 0.0175, 0.0173,
+    #         0.0165, 0.0150, 0.0125, 0.0091, 0.0063, 0.0043, 0.0031, 0.0024, 0.0074,
+    #         0.0074, 0.0074])
 
     z, indices = encoder.run_encoder()
-    # print(target.log_prob(z))
-    # print(sum(encoder.aux_var_kl))
-    # plot_2d_distribution(target)
-    # plot_running_sum(encoder.selected_samples, plot_index_labels=False)
-    # plt.plot(z[0], z[1], 'o')
-    # plt.show()
+    print(target.log_prob(z))
+    print(sum(encoder.aux_var_kl))
+    plot_2d_distribution(target)
+    plot_running_sum(encoder.selected_samples, plot_index_labels=False)
+    plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
+             'x')
+    plt.show()

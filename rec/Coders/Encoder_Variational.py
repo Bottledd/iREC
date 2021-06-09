@@ -3,14 +3,14 @@ import math
 import matplotlib.pyplot as plt
 import torch
 import torch.distributions as dist
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 
 from models.BayesianLinRegressor import BayesLinRegressor
 from rec.distributions.CodingSampler import CodingSampler
-from rec.distributions.EmpiricalMixturePosterior_Parallel import EmpiricalMixturePosterior
+from rec.distributions.VariationalPosterior import VariationalPosterior
 from rec.samplers.GreedySampling import GreedySampler
 from rec.samplers.ImportanceSampling import ImportanceSampler
-from rec.utils import kl_estimate_with_mc, plot_running_sum_1d, plot_running_sum_2d, plot_2d_distribution, plot_1d_distribution
+from rec.utils import kl_estimate_with_mc, compute_variational_posterior, plot_samples_in_2d, plot_running_sum_2d
 
 
 class Encoder:
@@ -21,7 +21,6 @@ class Encoder:
                  selection_sampler,
                  auxiliary_posterior,
                  omega,
-                 n_samples_from_target,
                  epsilon=0.,
                  ):
         # deduce dimension of problem from target mean
@@ -37,7 +36,9 @@ class Encoder:
             print(f"{kl_q_p}")
         except:
             # need to do MC estimate
-            kl_q_p = kl_estimate_with_mc(target, coding_z_prior, dim=0, num_samples=10000)
+            kl_q_p = kl_estimate_with_mc(target, coding_z_prior)
+
+        self.total_kl = kl_q_p
 
         # compute parameters for auxiliary method
         self.target = target
@@ -46,10 +47,10 @@ class Encoder:
 
         # instantiate the coding sampler and auxiliary posterior
         instance_coding_sampler = coding_sampler(problem_dimension=self.problem_dimension,
-                                                 n_auxiliary=self.n_auxiliary, var=1)
+                                                 n_auxiliary=self.n_auxiliary,
+                                                 var=1)
 
         self.auxiliary_posterior = auxiliary_posterior(target,
-                                                       n_samples_from_target,
                                                        instance_coding_sampler)
 
         # auxiliary samples that are selected
@@ -60,9 +61,6 @@ class Encoder:
         # need to keep track of joint probabilities
         self.selected_samples_joint_coding_log_prob = torch.zeros((1,))
         self.selected_samples_joint_posterior_log_prob = torch.zeros((1,))
-
-        # need to keep track of mixing weights
-        self.selected_samples_mixing_weights = torch.zeros((n_samples_from_target,))
 
         # store selection sampler object
         self.selection_sampler = selection_sampler
@@ -87,24 +85,19 @@ class Encoder:
             self.selected_samples_joint_coding_log_prob += coding_log_probs
             self.selected_samples_joint_posterior_log_prob += auxiliary_posterior_log_prob
 
-            # update mixture_weights - since these are the joint p(a_{1:k}|z) simply add on p(a_k | a_{1:k-1}, z_d)
-            self.selected_samples_mixing_weights += auxiliary_posterior_dist.component_distribution.log_prob(samples)
-
     def run_encoder(self):
         pbar = tqdm(range(self.n_auxiliary), position=0, leave=True)
         for i in pbar:
             # set the seed
-            seed = i + 1e4 + self.selected_samples_indices[i-1]
-
+            # seed = (i * 10e4) + self.selected_samples_indices[i-1]
+            seed = i + self.initial_seed
             # create new auxiliary prior distribution, p(a_k)
             auxiliary_prior = self.auxiliary_posterior.coding_sampler.auxiliary_coding_dist(i)
 
             if i < self.n_auxiliary - 1:
                 # compute conditional posterior distribution, q(a_k | a_{1:k-1})
                 auxiliary_conditional_posterior = self.auxiliary_posterior.q_ak_given_history(self.selected_samples,
-                                                                                              i,
-                                                                                              self.selected_samples_mixing_weights,
-                                                                                              log_prob=True)
+                                                                                              i)
 
                 # create new selection sampler object
                 selection_sampler = self.selection_sampler(coding=auxiliary_prior,
@@ -127,6 +120,9 @@ class Encoder:
                 pbar.set_description(f"KL of aux {i + 1} is {kl_estimate}")
                 # update stored samples, indices and log probs
                 self.update_stored_samples(i, indices, samples, auxiliary_prior, auxiliary_conditional_posterior)
+
+                self.auxiliary_posterior.q_z_given_trajectory(self.selected_samples, i)
+
             else:
                 # cannot compute a conditional posterior for final sample
                 selection_sampler = self.selection_sampler(coding=auxiliary_prior,
@@ -149,49 +145,55 @@ class Encoder:
 
 if __name__ == '__main__':
     torch.set_default_tensor_type(torch.DoubleTensor)
-    initial_seed_target = 100
-    blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
-                            prior_alpha=0.001,
-                            signal_std=10,
-                            num_targets=10,
+    initial_seed_target = 0
+    blr = BayesLinRegressor(prior_mean=torch.zeros(10),
+                            prior_alpha=1,
+                            signal_std=1,
+                            num_targets=100,
                             seed=initial_seed_target)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
     blr.posterior_update()
-    target = blr.weight_posterior
-
-    # target = dist.multivariate_normal.MultivariateNormal(loc=torch.tensor([0.9, -11.2]),
-    #                                                      covariance_matrix=torch.eye(2))
+    true_target = blr.weight_posterior
 
     coding_sampler = CodingSampler
-    auxiliary_posterior = EmpiricalMixturePosterior
+    auxiliary_posterior = VariationalPosterior
     selection_sampler = GreedySampler
     omega = 8
-    n_samples_from_target = 100
 
+    var_target = compute_variational_posterior(true_target)
     initial_seed = 0
 
-    encoder = Encoder(target,
+    encoder = Encoder(var_target,
                       initial_seed,
                       coding_sampler,
                       selection_sampler,
                       auxiliary_posterior,
                       omega,
-                      n_samples_from_target,
                       epsilon=0.,
                       )
-    #
-    # encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([2.6610e-02, 8.3137e-02, 1.0406e-01, 1.1048e-01, 1.0939e-01, 1.0591e-01,
-    #         1.1909e-01, 1.2233e-01, 1.1176e-01, 7.6761e-02, 3.0398e-02, 8.0384e-05,
-    #         3.0745e-08, 1.7882e-11, 3.6674e-15])
+    # encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.3094, 0.2134, 0.1457, 0.1002, 0.0698, 0.0491, 0.0351, 0.0255, 0.0194,
+    #     0.0156, 0.0085, 0.0040, 0.0025, 0.0019])
+
+    # encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.3189, 0.2091, 0.1406, 0.0963, 0.0668, 0.0465, 0.0323, 0.0228, 0.0174,
+    #         0.0136, 0.0102, 0.0074, 0.0053, 0.0037, 0.0025, 0.0017, 0.0012, 0.0009,
+    #         0.0007, 0.0006, 0.0005, 0.0010])
+    # encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor(
+    #     [0.1561, 0.1479, 0.1372, 0.1241, 0.1091, 0.0932, 0.0784, 0.0660, 0.0438,
+    #      0.0192, 0.0086, 0.0045, 0.0026, 0.0015, 0.0011, 0.0011, 0.0010, 0.0010,
+    #      0.0009, 0.0009, 0.0008, 0.0010])
 
     z, indices = encoder.run_encoder()
-    print(target.log_prob(z))
-    print(sum(encoder.aux_var_kl))
-    plot_2d_distribution(target)
-    # plot_1d_distribution(target)
-    plot_running_sum_2d(encoder.selected_samples, plot_index_labels=False)
-    # plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
-    #          'x')
-    # plt.plot(z, torch.exp(target.log_prob(z)), 'o')
+    plot_samples_in_2d(target=true_target)
+    plot_samples_in_2d(coded_sample=z)
+    mahalobonis_dist = torch.sqrt((true_target.mean - z).T @ true_target.covariance_matrix @ (true_target.mean - z))
+    print(f"The standardised / normal MSE is: {blr.measure_performance(z, type='MSE')}\n"
+          f"The MAE is: {blr.measure_performance(z, type='MAE')}\n"
+          f"The Mahalobonis distance is: {mahalobonis_dist}\n"
+          f"The MSE of the mean is: {blr.measure_performance(true_target.mean, type='MSE')}\n"
+          f"The MAE of the mean is: {blr.measure_performance(true_target.mean, type='MAE')}")
+    # print(sum(encoder.aux_var_kl))
+    # plot_2d_distribution(target)
+    plot_running_sum_2d(encoder.selected_samples, plot_index_labels=True)
+    # plt.plot(z[0], z[1], 'o')
     plt.show()

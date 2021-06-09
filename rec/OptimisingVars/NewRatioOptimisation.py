@@ -45,8 +45,8 @@ class OptimiseRatio(nn.Module):
 
         return aux_traj
 
-    def optimise_kth_ratio(self, index, remaining_var, remaining_kl, num_steps=1000):
-        optimiser = torch.optim.Adam(self.parameters(), lr=1e-3)
+    def optimise_kth_ratio(self, index, remaining_var, remaining_kl, num_steps=500):
+        optimiser = torch.optim.Adam(self.parameters(), lr=3e-3)
         pbar = trange(num_steps)
         for i in pbar:
             optimiser.zero_grad()
@@ -99,24 +99,22 @@ class OptimiseRatio(nn.Module):
 
 
 if __name__ == '__main__':
-    # initial_seed_target = 0
-    # blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
-    #                         prior_alpha=0.01,
-    #                         signal_std=5,
-    #                         num_targets=1,
-    #                         seed=initial_seed_target)
-    # blr.sample_feature_inputs()
-    # blr.sample_regression_targets()
-    # blr.posterior_update()
-    # target = blr.weight_posterior
-    #torch.set_default_tensor_type(torch.DoubleTensor)
-    target = dist.multivariate_normal.MultivariateNormal(loc=torch.tensor([15.]), covariance_matrix=0.25*torch.eye(1))
+    initial_seed_target = 0
+    blr = BayesLinRegressor(prior_mean=torch.zeros(50),
+                            prior_alpha=1,
+                            signal_std=1e-2,
+                            num_targets=100,
+                            seed=initial_seed_target)
+    blr.sample_feature_inputs()
+    blr.sample_regression_targets()
+    blr.posterior_update()
+    target = blr.weight_posterior
     z_sample = target.mean
 
     dim = z_sample.shape[0]
     prior_var = 1.
     omega = 8
-    n_trajectories = 256
+    n_trajectories = 1000
 
     # first try to compute KL between q(z) and p(z) with torch.distributions
     try:

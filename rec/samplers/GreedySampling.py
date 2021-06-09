@@ -28,9 +28,6 @@ class GreedySampler:
         # sample from coding distribution
         samples = self.coding.sample((self.num_samples,))
 
-        # variance = self.coding.covariance_matrix.numpy()
-        # samples_np = np.random.multivariate_normal(mean=np.zeros(2,), cov=variance, size=(self.num_samples,))
-        # samples = torch.from_numpy(samples_np)
         return samples
 
     def final_sample(self, samples, previous_samples):

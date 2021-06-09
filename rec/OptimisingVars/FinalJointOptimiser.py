@@ -8,16 +8,15 @@ from models.BayesianLinRegressor import BayesLinRegressor
 from rec.utils import kl_estimate_with_mc, plot_2d_distribution
 import numpy as np
 
-class NewJointOpt(nn.Module):
-    def __init__(self, z_sample, omega, n_auxiliaries, n_trajectories, total_kl, total_var):
-        super(NewJointOpt, self).__init__()
+class FinalJointOptimiser(nn.Module):
+    def __init__(self, z_sample, omega, n_auxiliaries, total_kl, n_trajectories=1000, total_var=1):
+        super(FinalJointOptimiser, self).__init__()
         self.n_auxiliaries = n_auxiliaries
         self.n_trajectories = n_trajectories
         self.omega = omega
         self.register_buffer("z_sample", z_sample)
         self.total_var = total_var
         self.dim = z_sample.shape[0]
-        #self.pre_softmax_aux_vars = nn.Parameter(dist.normal.Normal(loc=0., scale=1).sample((n_auxiliaries,)))
         self.register_buffer('trajectories', torch.zeros(n_trajectories, n_auxiliaries, self.dim))
         self.pre_softmax_aux_vars = nn.Parameter(torch.ones(n_auxiliaries))
         self.kl_history = []
@@ -52,9 +51,10 @@ class NewJointOpt(nn.Module):
         kl_loss = (aux_kl - self.omega) ** 2
         remaining_kl_loss = ((remaining_kl - aux_kl) - (self.n_auxiliaries - index - 1) * self.omega) ** 2
         loss = torch.mean(kl_loss + remaining_kl_loss)
+
         return loss, torch.mean(aux_kl)
 
-    def run_optimiser(self, epochs=8000):
+    def run_optimiser(self, epochs=1000):
         optimiser = torch.optim.Adam(self.parameters(), lr=1e-2)
         pbar = trange(epochs)
         for i in pbar:
@@ -95,24 +95,24 @@ class NewJointOpt(nn.Module):
 
 
 if __name__ == '__main__':
-    # initial_seed_target = 0
-    # blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
-    #                         prior_alpha=0.01,
-    #                         signal_std=5,
-    #                         num_targets=1,
-    #                         seed=initial_seed_target)
-    # blr.sample_feature_inputs()
-    # blr.sample_regression_targets()
-    # blr.posterior_update()
-    # target = blr.weight_posterior
-    # torch.set_default_tensor_type(torch.DoubleTensor)
-    target = dist.multivariate_normal.MultivariateNormal(loc=torch.tensor([15.]), covariance_matrix=0.25 * torch.eye(1))
+    torch.set_default_tensor_type(torch.DoubleTensor)
+    initial_seed_target = 0
+    blr = BayesLinRegressor(prior_mean=torch.zeros(50),
+                            prior_alpha=1,
+                            signal_std=1,
+                            num_targets=100,
+                            seed=initial_seed_target)
+    blr.sample_feature_inputs()
+    blr.sample_regression_targets()
+    blr.posterior_update()
+
+    target = blr.weight_posterior
     z_sample = target.mean
 
     dim = z_sample.shape[0]
     prior_var = 1.
     omega = 8
-    n_trajectories = 512
+    n_trajectories = 64
 
     # first try to compute KL between q(z) and p(z) with torch.distributions
     try:
@@ -127,7 +127,7 @@ if __name__ == '__main__':
     n_auxiliaries = math.ceil(kl_q_p / omega)
     print(f"Num of Aux is: {n_auxiliaries}")
 
-    optimising = NewJointOpt(z_sample, omega, n_auxiliaries, n_trajectories, kl_q_p, prior_var)
+    optimising = FinalJointOptimiser(z_sample, omega, n_auxiliaries, kl_q_p, n_trajectories, prior_var)
     best_vars = optimising.run_optimiser()
     fig, axes = plt.subplots(1, 2, figsize=(9, 5))
 

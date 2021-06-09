@@ -7,8 +7,8 @@ class CodingSampler(dist.MultivariateNormal):
                  problem_dimension,
                  n_auxiliary,
                  var=1,
-                 sigma_setting='uniform',
-                 power_rule_exponent=0.6,
+                 sigma_setting='power_rule',
+                 power_rule_exponent=0.445,
                  sigma_vector=None):
 
         self.problem_dimension = problem_dimension
@@ -42,7 +42,7 @@ class CodingSampler(dist.MultivariateNormal):
 
 if __name__ == '__main__':
     coder = CodingSampler(var=1,
-                          problem_dimension=2,
-                          n_auxiliary=10)
+                          problem_dimension=10,
+                          n_auxiliary=14)
 
-    test_dist = coder.auxiliary_coding_dist(2, )
+    print(coder.auxiliary_vars)
