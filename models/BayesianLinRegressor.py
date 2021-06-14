@@ -104,7 +104,7 @@ class BayesLinRegressor:
 
         return predictive_mean, predictive_variance
 
-    def measure_performance(self, weights, type='MSE'):
+    def measure_performance(self, weights, kind='MSE'):
         # broadcast to correct shapes
         weight_matrix = torch.tile(weights, (self.feature_targets.shape[0], 1))
 
@@ -113,10 +113,28 @@ class BayesLinRegressor:
 
         # multiply weights to features
         feature_times_weights = torch.sum(weight_matrix * feature_matrix, dim=1)
-        if type == 'MSE':
+        if kind == 'MSE':
             sample_mse = (self.regression_targets - feature_times_weights) ** 2
             return torch.mean(sample_mse)
 
-        elif type == 'MAE':
+        elif kind == 'MAE':
+            mae = torch.abs(self.regression_targets - feature_times_weights)
+            return torch.mean(mae)
+
+    def measure_true_performance(self, kind='MSE', samples=1000):
+        weights = self.weight_posterior.sample((samples,))
+        # broadcast to correct shapes
+        weight_matrix = torch.tile(weights[None], (self.feature_targets.shape[0], 1, 1))
+
+        # make feature matrix
+        feature_matrix = torch.hstack((self.feature_targets, torch.ones(self.feature_targets.shape[0], 1)))
+
+        # multiply weights to features
+        feature_times_weights = torch.einsum("ibj, ij -> bi", weight_matrix, feature_matrix)
+        if kind == 'MSE':
+            sample_mse = (self.regression_targets - feature_times_weights) ** 2
+            return torch.mean(sample_mse)
+
+        elif kind == 'MAE':
             mae = torch.abs(self.regression_targets - feature_times_weights)
             return torch.mean(mae)

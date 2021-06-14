@@ -20,15 +20,22 @@ class VariationalPosterior:
         sigma_k = self.coding_sampler.auxiliary_vars[k]
         mean_scalar = sigma_k / s_k_minus_one
         variance_term_one = (sigma_k * s_k / s_k_minus_one) * torch.eye(self.problem_dimension)
-        variance_term_two = self.current_z_var * (sigma_k / s_k_minus_one) ** 2
-        covariance = variance_term_one + variance_term_two
 
         if k == 0:
+            variance_term_two = self.current_z_var[0] * (sigma_k / s_k_minus_one) ** 2
+            covariance = variance_term_one + variance_term_two
             b_k_minus_one = torch.sum(aux_history[:k], dim=0)
-            mean = (self.current_z_mean - b_k_minus_one) * mean_scalar
+            mean = (self.current_z_mean[0] - b_k_minus_one) * mean_scalar
         else:
+            # need to tile the current z mean and var
+            beamwidth = self.current_z_mean.shape[0]
+            n_samples_per_aux = aux_history.shape[0] // beamwidth
+            tiled_z_mean = torch.tile(self.current_z_mean, (n_samples_per_aux, 1))
+            tiled_z_var = torch.tile(self.current_z_var, (n_samples_per_aux, 1, 1))
+            variance_term_two = tiled_z_var * (sigma_k / s_k_minus_one) ** 2
+            covariance = variance_term_one + variance_term_two
             b_k_minus_one = torch.sum(aux_history[:, :k], dim=1)
-            mean = (self.current_z_mean - b_k_minus_one) * mean_scalar
+            mean = (tiled_z_mean - b_k_minus_one) * mean_scalar
 
         return dist.multivariate_normal.MultivariateNormal(loc=mean, covariance_matrix=covariance)
 

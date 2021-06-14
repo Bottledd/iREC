@@ -1,16 +1,13 @@
 import math
-
 import matplotlib.pyplot as plt
 import torch
 import torch.distributions as dist
 from tqdm import tqdm
-
 from models.BayesianLinRegressor import BayesLinRegressor
 from rec.distributions.CodingSampler import CodingSampler
 from rec.distributions.VariationalPosterior import VariationalPosterior
 from rec.samplers.GreedySampling import GreedySampler
-from rec.samplers.ImportanceSampling import ImportanceSampler
-from rec.utils import kl_estimate_with_mc, compute_variational_posterior, plot_samples_in_2d, plot_running_sum_2d
+from rec.utils import kl_estimate_with_mc, compute_variational_posterior, plot_samples_in_2d, plot_running_sum_2d, plot_pairs_of_samples
 
 
 class Encoder:
@@ -149,7 +146,7 @@ if __name__ == '__main__':
     blr = BayesLinRegressor(prior_mean=torch.zeros(10),
                             prior_alpha=1,
                             signal_std=1,
-                            num_targets=100,
+                            num_targets=1000,
                             seed=initial_seed_target)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
@@ -182,16 +179,17 @@ if __name__ == '__main__':
     #     [0.1561, 0.1479, 0.1372, 0.1241, 0.1091, 0.0932, 0.0784, 0.0660, 0.0438,
     #      0.0192, 0.0086, 0.0045, 0.0026, 0.0015, 0.0011, 0.0011, 0.0010, 0.0010,
     #      0.0009, 0.0009, 0.0008, 0.0010])
-
     z, indices = encoder.run_encoder()
-    plot_samples_in_2d(target=true_target)
-    plot_samples_in_2d(coded_sample=z)
+    plot_pairs_of_samples(true_target, encoder.selected_samples)
+    # plot_samples_in_2d(target=true_target)
+    # plot_samples_in_2d(coded_sample=z)
     mahalobonis_dist = torch.sqrt((true_target.mean - z).T @ true_target.covariance_matrix @ (true_target.mean - z))
-    print(f"The standardised / normal MSE is: {blr.measure_performance(z, type='MSE')}\n"
-          f"The MAE is: {blr.measure_performance(z, type='MAE')}\n"
+    print(f"The MSE is: {blr.measure_performance(z, kind='MSE')}\n"
+          f"The MAE is: {blr.measure_performance(z, kind='MAE')}\n"
           f"The Mahalobonis distance is: {mahalobonis_dist}\n"
-          f"The MSE of the mean is: {blr.measure_performance(true_target.mean, type='MSE')}\n"
-          f"The MAE of the mean is: {blr.measure_performance(true_target.mean, type='MAE')}")
+          f"The MSE using true samples is: {blr.measure_true_performance(kind='MSE')}\n"
+          f"The MAE using true samples is: {blr.measure_true_performance(kind='MAE')}\n"
+          f"log q(z)/p(z) is: {true_target.log_prob(z) - encoder.auxiliary_posterior.coding_sampler.log_prob(z)}")
     # print(sum(encoder.aux_var_kl))
     # plot_2d_distribution(target)
     plot_running_sum_2d(encoder.selected_samples, plot_index_labels=True)

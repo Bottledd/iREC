@@ -150,11 +150,11 @@ class Encoder:
 
 if __name__ == '__main__':
     torch.set_default_tensor_type(torch.DoubleTensor)
-    initial_seed_target = 0
+    initial_seed_target = 69
     blr = BayesLinRegressor(prior_mean=torch.zeros(50),
                             prior_alpha=1,
                             signal_std=1,
-                            num_targets=100,
+                            num_targets=10000,
                             seed=initial_seed_target)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
@@ -167,7 +167,7 @@ if __name__ == '__main__':
     omega = 8
     n_samples_from_target = 100
 
-    initial_seed = 0
+    initial_seed = 10
 
     encoder = Encoder(target,
                       initial_seed,
@@ -176,14 +176,14 @@ if __name__ == '__main__':
                       auxiliary_posterior,
                       omega,
                       n_samples_from_target,
-                      epsilon=0.3,
+                      epsilon=0.,
                       )
 
     z_sample = target.mean
     n_auxiliaries = encoder.n_auxiliary
     kl_q_p = encoder.total_kl
 
-    option = 1
+    option = -1
 
     if option == 1:
         encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.3094, 0.2134, 0.1457, 0.1002, 0.0698, 0.0491, 0.0351, 0.0255, 0.0194,
@@ -198,18 +198,23 @@ if __name__ == '__main__':
 
     print(f"Run Encoder!")
     z, indices = encoder.run_encoder()
-    mahalobonis_dist = torch.sqrt((target.mean - z).T@ target.covariance_matrix @ (target.mean - z))
-    print(f"The MSE is: {blr.measure_performance(z, type='MSE')}\n"
-          f"The MAE is: {blr.measure_performance(z, type='MAE')}\n"
+    mahalobonis_dist = torch.sqrt((target.mean - z).T @ target.covariance_matrix @ (target.mean - z))
+    print(f"The MSE is: {blr.measure_performance(z, kind='MSE')}\n"
+          f"The MAE is: {blr.measure_performance(z, kind='MAE')}\n\n"
+          f"The MSE of MAP is: {blr.measure_performance(target.mean, kind='MSE')}\n"
+          f"The MAE of MAP is: {blr.measure_performance(target.mean, kind='MAE')}\n"
           f"The Mahalobonis distance is: {mahalobonis_dist}\n"
-          f"The MSE of the mean is: {blr.measure_performance(target.mean, type='MSE')}\n"
-          f"The MAE of the mean is: {blr.measure_performance(target.mean, type='MAE')}")
-    plot_samples_in_2d(target=target)
-    plot_samples_in_2d(empirical_samples=encoder.auxiliary_posterior.empirical_samples)
-    plot_samples_in_2d(coded_sample=z)
+          f"The MSE using true samples is: {blr.measure_true_performance(kind='MSE')}\n"
+          f"The MAE using true samples is: {blr.measure_true_performance(kind='MAE')}\n"
+          f"The % drop-off to MAP MSE is: {(blr.measure_performance(z, kind='MSE') - blr.measure_performance(target.mean, kind='MSE')) / blr.measure_performance(target.mean, kind='MSE') * 100}\n"
+          f"The % drop-off to MAP MAE is: {(blr.measure_performance(z, kind='MAE') - blr.measure_performance(target.mean, kind='MAE')) / blr.measure_performance(target.mean, kind='MAE') * 100}\n"
+          f"log q(z)/p(z) is: {target.log_prob(z) - encoder.auxiliary_posterior.coding_sampler.log_prob(z)}")
+    # plot_samples_in_2d(target=target)
+    # plot_samples_in_2d(empirical_samples=encoder.auxiliary_posterior.empirical_samples)
+    # plot_samples_in_2d(coded_sample=z)
 
     # plot_2d_distribution(target)
-    plot_running_sum_2d(encoder.selected_samples, plot_index_labels=True)
+    # plot_running_sum_2d(encoder.selected_samples, plot_index_labels=True)
     # plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
     #          'x')
     # plt.plot(z[0], z[1], 'o')

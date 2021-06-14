@@ -10,7 +10,7 @@ from rec.beamsearch.distributions.CodingSampler import CodingSampler
 from rec.beamsearch.distributions.EmpiricalMixturePosterior import EmpiricalMixturePosterior
 from rec.beamsearch.samplers.GreedySampling import GreedySampler
 from rec.beamsearch.utils import convert_flattened_indices
-from rec.utils import kl_estimate_with_mc, plot_running_sum_1d, plot_running_sum_2d, plot_2d_distribution, plot_1d_distribution, plot_samples_in_2d
+from rec.utils import kl_estimate_with_mc, plot_running_sum_1d, plot_running_sum_2d, plot_2d_distribution, plot_1d_distribution, plot_samples_in_2d, plot_pairs_of_samples
 from rec.OptimisingVars.FinalJointOptimiser import FinalJointOptimiser
 
 class Encoder:
@@ -23,7 +23,7 @@ class Encoder:
                  omega,
                  n_samples_from_target,
                  beamwidth,
-                 epsilon=0,
+                 epsilon=0.,
                  ):
         # instantiate the beamwidth
         self.beamwidth = beamwidth
@@ -202,7 +202,7 @@ class Encoder:
                 if self.beamwidth > tiled_beams.shape[0]:
                     n_new_beams = tiled_beams.shape[0]
                 else:
-                    n_new_beams = beamwidth
+                    n_new_beams = self.beamwidth
                 # create new selection sampler object
                 selection_sampler = self.selection_sampler(coding=auxiliary_prior,
                                                            target=auxiliary_conditional_posterior,
@@ -262,11 +262,11 @@ class Encoder:
 
 if __name__ == '__main__':
     torch.set_default_tensor_type(torch.DoubleTensor)
-    initial_seed_target = 0
-    blr = BayesLinRegressor(prior_mean=torch.zeros(10),
+    initial_seed_target = 69
+    blr = BayesLinRegressor(prior_mean=torch.zeros(20),
                             prior_alpha=1,
                             signal_std=1,
-                            num_targets=100,
+                            num_targets=10000,
                             seed=initial_seed_target)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
@@ -278,8 +278,8 @@ if __name__ == '__main__':
     selection_sampler = GreedySampler
     omega = 8
     n_samples_from_target = 10
-    beamwidth = 50
-
+    beamwidth = 1
+    epsilon = 0.
     initial_seed = 0
 
     encoder = Encoder(target,
@@ -289,38 +289,54 @@ if __name__ == '__main__':
                       auxiliary_posterior,
                       omega,
                       n_samples_from_target,
-                      epsilon=0.,
+                      epsilon=epsilon,
                       beamwidth=beamwidth)
 
     z_sample = target.mean
     n_auxiliaries = encoder.n_auxiliary
     kl_q_p = encoder.total_kl
 
-    pre_optimised_vars = True
+    option = -1
 
-    if pre_optimised_vars:
-        encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor([0.9188, 0.0682, 0.0130])
-    else:
+    if option == 1:
+        encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor(
+            [0.3094, 0.2134, 0.1457, 0.1002, 0.0698, 0.0491, 0.0351, 0.0255, 0.0194,
+             0.0156, 0.0085, 0.0040, 0.0025, 0.0019])
+
+    elif option == 2:
         print(f"First Optimise Prior Variances!")
-        optimising = FinalJointOptimiser(z_sample, omega, n_auxiliaries, kl_q_p, n_trajectories=1000, total_var=1)
-        encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = optimising.run_optimiser(epochs=1000)
+        optimising = FinalJointOptimiser(z_sample, omega, n_auxiliaries, kl_q_p, n_trajectories=50, total_var=1)
+        encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = optimising.run_optimiser(
+            epochs=5000 // n_auxiliaries)
+    else:
+        pass
 
     z, indices = encoder.run_encoder()
     best_sample_idx = torch.argmax(target.log_prob(z))
     best_sample = z[best_sample_idx]
-    mahalobonis_dist = torch.sqrt((target.mean - best_sample).T@target.covariance_matrix @(target.mean - best_sample))
-    print(f"The MSE is: {blr.measure_performance(best_sample, type='MSE')}\n"
-          f"The MAE is: {blr.measure_performance(best_sample, type='MAE')}\n"
-          f"The Mahalobonis distance is: {mahalobonis_dist}\n"
-          f"The MSE of the mean is: {blr.measure_performance(target.mean, type='MSE')}\n"
-          f"The MAE of the mean is: {blr.measure_performance(target.mean, type='MAE')}\n"
+    plot_pairs_of_samples(target, encoder.selected_samples[best_sample_idx])
+    mahalanobis_dist = torch.sqrt((target.mean - best_sample).T@target.covariance_matrix @(target.mean - best_sample))
+
+    import sys
+    parent_root = "../../../"
+    sys.stdout = open(parent_root + f"Logs/empirical_beam{beamwidth}_epsilon{epsilon}", 'w')
+
+    print(f"The MSE is: {blr.measure_performance(best_sample, kind='MSE')}\n"
+          f"The MAE is: {blr.measure_performance(best_sample, kind='MAE')}\n"
+          f"The Mahalanobis distance is: {mahalanobis_dist}\n"
+          f"The MSE of the mean is: {blr.measure_performance(target.mean, kind='MSE')}\n"
+          f"The MAE of the mean is: {blr.measure_performance(target.mean, kind='MAE')}\n"
+          f"The % drop-off to MAP MSE is: {(blr.measure_performance(best_sample, kind='MSE') - blr.measure_performance(target.mean, kind='MSE')) / blr.measure_performance(target.mean, kind='MSE') * 100}\n"
+          f"The % drop-off to MAP MAE is: {(blr.measure_performance(best_sample, kind='MAE') - blr.measure_performance(target.mean, kind='MAE')) / blr.measure_performance(target.mean, kind='MAE') * 100}\n"
           f"log q(z)/p(z) is: {target.log_prob(best_sample) - encoder.auxiliary_posterior.coding_sampler.log_prob(best_sample)}")
-    plot_samples_in_2d(target=target)
-    plot_samples_in_2d(empirical_samples=encoder.auxiliary_posterior.empirical_samples)
-    plot_samples_in_2d(coded_sample=best_sample)
+    # plot_samples_in_2d(target=target)
+    # plot_samples_in_2d(empirical_samples=encoder.auxiliary_posterior.empirical_samples)
+    # plot_samples_in_2d(coded_sample=best_sample)
     # plot_2d_distribution(target)
-    plot_running_sum_2d(encoder.selected_samples[best_sample_idx], plot_index_labels=True)
+    # plot_running_sum_2d(encoder.selected_samples[best_sample_idx], plot_index_labels=True)
     # plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
     #          'x')
     # plt.plot(best_sample[0], best_sample[1], 'o')
+    plt.savefig(f"../../../Figures/empirical_beam{beamwidth}_epsilon{epsilon}.png", bbox_inches='tight')
     plt.show()
+    sys.stdout.close()

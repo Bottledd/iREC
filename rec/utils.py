@@ -35,14 +35,14 @@ def plot_1d_distribution(distribution):
     plt.plot(grid, probs)
 
 
-def plot_running_sum_2d(samples, plot_index_labels=False):
+def plot_running_sum_2d(samples, indices=(0,1), plot_index_labels=False):
     n_auxiliary = samples.shape[0]
     running_sum = torch.cumsum(samples, dim=0)
-    plt.plot(running_sum[:, 0], running_sum[:, 1], '-')
+    plt.plot(running_sum[:, indices[0]], running_sum[:, indices[1]], '-')
 
     if plot_index_labels:
         for i, txt in enumerate(range(n_auxiliary)):
-            plt.annotate(txt, (running_sum[i, 0], running_sum[i, 1]), color='black')
+            plt.annotate(txt, (running_sum[i, indices[0]], running_sum[i, indices[1]]), color='black')
 
 
 def plot_running_sum_1d(target, samples, plot_index_labels=False):
@@ -77,3 +77,25 @@ def plot_samples_in_2d(target=None, dimensions=(0, 1), num_samples=10000, coded_
         # sample from target
         samples = target.sample((num_samples,))
         plt.plot(samples[:, dimensions[0]], samples[:, dimensions[1]], 'x')
+
+
+def plot_pairs_of_samples(target, coded_sample, num_samples=10000, empirical_samples=None):
+    dim = target.mean.shape[0]
+    samples = target.sample((num_samples,))
+    assert dim % 2 == 0, "Need dim divisible by 2 to plot nicely!"
+
+    columns = 1
+    rows = dim // 2
+    running_sum = torch.cumsum(coded_sample, dim=0)
+    final_sample = running_sum[-1]
+    fig, ax = plt.subplots(rows, columns, figsize=(10, 15))
+
+    for i in range(rows):
+        ax[i].plot(samples[:, 2 * i], samples[:, 2 * i + 1], 'x')
+        if empirical_samples is not None:
+            ax[i].plot(empirical_samples[:, 2 * i], empirical_samples[:, 2 * i + 1], 'x')
+        ax[i].plot(running_sum[:, 2 * i], running_sum[:, 2 * i + 1], '-')
+        ax[i].plot(final_sample[2 * i], final_sample[2 * i + 1], 'ko')
+        ax[i].set_aspect('equal', adjustable='box')
+
+    fig.tight_layout()
