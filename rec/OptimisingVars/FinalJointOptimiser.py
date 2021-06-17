@@ -55,7 +55,7 @@ class FinalJointOptimiser(nn.Module):
         return loss, torch.mean(aux_kl)
 
     def run_optimiser(self, epochs=1000):
-        optimiser = torch.optim.Adam(self.parameters(), lr=1e-2)
+        optimiser = torch.optim.Adam(self.parameters(), lr=3e-2)
         pbar = trange(epochs)
         for i in pbar:
             losses = torch.zeros(self.n_auxiliaries - 1).to(self.pre_softmax_aux_vars.device)
@@ -95,12 +95,11 @@ class FinalJointOptimiser(nn.Module):
 
 
 if __name__ == '__main__':
-    torch.set_default_tensor_type(torch.DoubleTensor)
     initial_seed_target = 0
-    blr = BayesLinRegressor(prior_mean=torch.zeros(50),
+    blr = BayesLinRegressor(prior_mean=torch.zeros(20),
                             prior_alpha=1,
                             signal_std=1,
-                            num_targets=100,
+                            num_targets=10000,
                             seed=initial_seed_target)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
@@ -111,7 +110,7 @@ if __name__ == '__main__':
 
     dim = z_sample.shape[0]
     prior_var = 1.
-    omega = 8
+    omega = 5
     n_trajectories = 64
 
     # first try to compute KL between q(z) and p(z) with torch.distributions

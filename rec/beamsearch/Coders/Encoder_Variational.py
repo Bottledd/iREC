@@ -1,5 +1,6 @@
 import math
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.distributions as dist
 from tqdm import tqdm
@@ -59,7 +60,9 @@ class Encoder:
 
         # auxiliary samples that are selected
         # keep track of samples themselves and indices separately so we can check to ensure they agree
-        self.selected_samples = torch.zeros((self.beamwidth, self.n_auxiliary, self.problem_dimension))
+        # randomly select an integer to mask with
+        self.rand_int = torch.randint(low=1000, high=10000, size=(1,))
+        self.selected_samples = torch.zeros((self.beamwidth, self.n_auxiliary, self.problem_dimension)) * self.rand_int
         self.selected_samples_indices = torch.zeros((self.beamwidth, self.n_auxiliary,))
 
         # need to keep track of joint probabilities
@@ -114,7 +117,8 @@ class Encoder:
                 self.selected_samples_joint_posterior_log_prob[:n_samples_to_add] += auxiliary_posterior_log_prob
 
     def run_encoder(self):
-        for i in tqdm(range(self.n_auxiliary)):
+        # for i in tqdm(range(self.n_auxiliary)):
+        for i in range(self.n_auxiliary):
             # set the seed
             seed = i + self.initial_seed
             # create new auxiliary prior distribution, p(a_k)
@@ -160,7 +164,7 @@ class Encoder:
 
             elif self.n_auxiliary - 1 > i > 0:
                 # first need to ignore any unfilled beams from previous run, i.e. mask 0 values
-                mask = self.selected_samples[:, i - 1].ne(0)
+                mask = self.selected_samples[:, i - 1].ne(self.rand_int)
                 expanded_mask = torch.repeat_interleave(mask[:, None, :], self.n_auxiliary, dim=1)
                 single_dim_mask = mask[:, 0]
                 pruned_beams = torch.masked_select(self.selected_samples, expanded_mask).reshape(-1, self.n_auxiliary,
@@ -172,13 +176,17 @@ class Encoder:
                 # need to expand the beams to have B*M elements
                 tiled_beams = torch.tile(pruned_beams, (self.n_samples_per_aux, 1, 1))
                 # compute conditional posterior distribution, q(a_k | a_{1:k-1})
+
                 auxiliary_conditional_posterior = self.auxiliary_posterior.q_ak_given_history(tiled_beams,
-                                                                                              i)
+                                                                                              i,
+                                                                                              mask)
+
                 # need to see if masked B_hat * M > B
                 if self.beamwidth > tiled_beams.shape[0]:
                     n_new_beams = tiled_beams.shape[0]
                 else:
                     n_new_beams = self.beamwidth
+
                 # create new selection sampler object
                 selection_sampler = self.selection_sampler(coding=auxiliary_prior,
                                                            target=auxiliary_conditional_posterior,
@@ -203,14 +211,15 @@ class Encoder:
                 # make new auxiliary distribution using current beams
                 auxiliary_conditional_posterior_untiled = self.auxiliary_posterior.q_ak_given_history(
                     self.selected_samples[beam_indices],
-                    i)
+                    i,
+                    beam_indices=beam_indices)
                 # update stored samples, indices and log probs
 
                 self.update_stored_samples(i, beam_indices=beam_indices, sample_indices=sample_indices, samples=samples,
                                            coding_dist=auxiliary_prior,
                                            auxiliary_posterior_dist=auxiliary_conditional_posterior_untiled)
 
-                self.auxiliary_posterior.q_z_given_trajectory(self.selected_samples, i)
+                self.auxiliary_posterior.q_z_given_trajectory(self.selected_samples, i, beam_indices)
             else:
                 # cannot compute a conditional posterior for final sample
                 selection_sampler = self.selection_sampler(coding=auxiliary_prior,
@@ -237,9 +246,8 @@ class Encoder:
 
 
 if __name__ == '__main__':
-    torch.set_default_tensor_type(torch.DoubleTensor)
-    initial_seed_target = 69
-    blr = BayesLinRegressor(prior_mean=torch.zeros(20),
+    initial_seed_target = 1
+    blr = BayesLinRegressor(prior_mean=torch.zeros(50),
                             prior_alpha=1,
                             signal_std=1,
                             num_targets=10000,
@@ -252,13 +260,13 @@ if __name__ == '__main__':
     coding_sampler = CodingSampler
     auxiliary_posterior = VariationalPosterior
     selection_sampler = GreedySampler
-    omega = 8
+    omega = 5
 
     var_target = compute_variational_posterior(true_target)
-    initial_seed = 10
+    initial_seed = 950085
 
-    beamwidth = 1
-    epsilon = 0.05
+    beamwidth = 50
+    epsilon = 0.
     encoder = Encoder(var_target,
                       initial_seed,
                       coding_sampler,
@@ -289,30 +297,30 @@ if __name__ == '__main__':
     z, indices = encoder.run_encoder()
     best_sample_idx = torch.argmax(true_target.log_prob(z))
     best_sample = z[best_sample_idx]
-    plot_pairs_of_samples(true_target, encoder.selected_samples[best_sample_idx])
-    mahalanobis_dist = torch.sqrt(
-        (true_target.mean - best_sample).T @ true_target.covariance_matrix @ (true_target.mean - best_sample))
-
-    import sys
-
-    parent_root = "../../../"
-    sys.stdout = open(parent_root + f"Logs/variational_beam{beamwidth}_epsilon{epsilon}", 'w')
-
-    print(f"The MSE is: {blr.measure_performance(best_sample, kind='MSE')}\n"
-          f"The MAE is: {blr.measure_performance(best_sample, kind='MAE')}\n"
-          f"The Mahalanobis distance is: {mahalanobis_dist}\n"
-          f"The MSE of the mean is: {blr.measure_performance(true_target.mean, kind='MSE')}\n"
-          f"The MAE of the mean is: {blr.measure_performance(true_target.mean, kind='MAE')}\n"
-          f"The % drop-off to MAP MSE is: {(blr.measure_performance(best_sample, kind='MSE') - blr.measure_performance(true_target.mean, kind='MSE')) / blr.measure_performance(true_target.mean, kind='MSE') * 100}\n"
-          f"The % drop-off to MAP MAE is: {(blr.measure_performance(best_sample, kind='MAE') - blr.measure_performance(true_target.mean, kind='MAE')) / blr.measure_performance(true_target.mean, kind='MAE') * 100}\n"
-          f"log q(z)/p(z) is: {true_target.log_prob(best_sample) - encoder.auxiliary_posterior.coding_sampler.log_prob(best_sample)}")
-    # plot_samples_in_2d(target=true_target)
-    # plot_samples_in_2d(coded_sample=best_sample)
-    # plot_2d_distribution(target)
-    # plot_running_sum_2d(encoder.selected_samples[best_sample_idx], plot_index_labels=True)
-    # plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
-    #          'x')
-    # plt.plot(best_sample[0], best_sample[1], 'o')
-    plt.savefig(f"../../../Figures/variational_beam{beamwidth}_epsilon{epsilon}.png", bbox_inches='tight')
-    plt.show()
-    sys.stdout.close()
+    # plot_pairs_of_samples(true_target, encoder.selected_samples[best_sample_idx])
+    # mahalanobis_dist = torch.sqrt(
+    #     (true_target.mean - best_sample).T @ true_target.covariance_matrix @ (true_target.mean - best_sample))
+    #
+    # import sys
+    #
+    # parent_root = "../../../"
+    # sys.stdout = open(parent_root + f"Logs/variational_beam{beamwidth}_epsilon{epsilon}", 'w')
+    #
+    # print(f"The MSE is: {blr.measure_performance(best_sample, kind='MSE')}\n"
+    #       f"The MAE is: {blr.measure_performance(best_sample, kind='MAE')}\n"
+    #       f"The Mahalanobis distance is: {mahalanobis_dist}\n"
+    #       f"The MSE of the mean is: {blr.measure_performance(true_target.mean, kind='MSE')}\n"
+    #       f"The MAE of the mean is: {blr.measure_performance(true_target.mean, kind='MAE')}\n"
+    #       f"The % drop-off to MAP MSE is: {(blr.measure_performance(best_sample, kind='MSE') - blr.measure_performance(true_target.mean, kind='MSE')) / blr.measure_performance(true_target.mean, kind='MSE') * 100}\n"
+    #       f"The % drop-off to MAP MAE is: {(blr.measure_performance(best_sample, kind='MAE') - blr.measure_performance(true_target.mean, kind='MAE')) / blr.measure_performance(true_target.mean, kind='MAE') * 100}\n"
+    #       f"log q(z)/p(z) is: {true_target.log_prob(best_sample) - encoder.auxiliary_posterior.coding_sampler.log_prob(best_sample)}")
+    # # plot_samples_in_2d(target=true_target)
+    # # plot_samples_in_2d(coded_sample=best_sample)
+    # # plot_2d_distribution(target)
+    # # plot_running_sum_2d(encoder.selected_samples[best_sample_idx], plot_index_labels=True)
+    # # plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
+    # #          'x')
+    # # plt.plot(best_sample[0], best_sample[1], 'o')
+    # plt.savefig(f"../../../Figures/variational_beam{beamwidth}_epsilon{epsilon}.png", bbox_inches='tight')
+    # plt.show()
+    # sys.stdout.close()
