@@ -62,7 +62,9 @@ class Encoder:
 
         # auxiliary samples that are selected
         # keep track of samples themselves and indices separately so we can check to ensure they agree
-        self.selected_samples = torch.zeros((self.beamwidth, self.n_auxiliary, self.problem_dimension))
+        # randomly select an integer to mask with
+        self.rand_int = torch.randint(low=1000, high=10000, size=(1,))
+        self.selected_samples = torch.ones((self.beamwidth, self.n_auxiliary, self.problem_dimension)) * self.rand_int
         self.selected_samples_indices = torch.zeros((self.beamwidth, self.n_auxiliary,))
 
         # need to keep track of joint probabilities
@@ -70,7 +72,7 @@ class Encoder:
         self.selected_samples_joint_posterior_log_prob = torch.zeros((self.beamwidth,))
 
         # need to keep track of mixing weights
-        self.selected_samples_mixing_weights = torch.zeros((self.beamwidth, n_samples_from_target,))
+        self.selected_samples_mixing_weights = torch.ones((self.beamwidth, n_samples_from_target,)) * self.rand_int
 
         # store selection sampler object
         self.selection_sampler = selection_sampler
@@ -179,8 +181,8 @@ class Encoder:
 
             elif self.n_auxiliary - 1 > i > 0:
                 # first need to ignore any unfilled beams from previous run, i.e. mask 0 values
-                mask = self.selected_samples[:, i - 1].ne(0)
-                mixing_weights_mask = self.selected_samples_mixing_weights.ne(0)
+                mask = self.selected_samples[:, i - 1].ne(self.rand_int)
+                mixing_weights_mask = self.selected_samples_mixing_weights.ne(self.rand_int)
                 expanded_mask = torch.repeat_interleave(mask[:, None, :], self.n_auxiliary, dim=1)
                 single_dim_mask = mask[:, 0]
                 pruned_beams = torch.masked_select(self.selected_samples, expanded_mask).reshape(-1, self.n_auxiliary,

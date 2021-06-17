@@ -62,7 +62,7 @@ class Encoder:
         # keep track of samples themselves and indices separately so we can check to ensure they agree
         # randomly select an integer to mask with
         self.rand_int = torch.randint(low=1000, high=10000, size=(1,))
-        self.selected_samples = torch.zeros((self.beamwidth, self.n_auxiliary, self.problem_dimension)) * self.rand_int
+        self.selected_samples = torch.ones((self.beamwidth, self.n_auxiliary, self.problem_dimension)) * self.rand_int
         self.selected_samples_indices = torch.zeros((self.beamwidth, self.n_auxiliary,))
 
         # need to keep track of joint probabilities
