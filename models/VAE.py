@@ -24,6 +24,7 @@ class VAE(nn.Module):
         self.dec_hidden_layers = nn.ModuleList(
             [nn.Linear(dec_latent_size, dec_latent_size) for i in range(dec_num_hidden_layers)])
         self.dec_final_layer = nn.Linear(dec_latent_size, input_size)
+        self.log_scale = nn.Parameter(torch.tensor([0.0]))
 
     def encode(self, x):
         x = F.relu(self.enc_input_layer(x))
@@ -33,11 +34,13 @@ class VAE(nn.Module):
 
         return self.enc_final_layer_mean(x), self.enc_final_layer_logvar(x)
 
-    def reparam(self, mu, logvar):
-        std = torch.exp(logvar * 0.5)
-        eps = torch.rand_like(std)
+    def sample_latent(self, mu, logvar):
+        std = torch.exp(logvar / 2)
 
-        return mu + std * eps
+        qzx = dist.normal.Normal(loc=mu, scale=std)
+
+        z = qzx.rsample()
+        return z
 
     def decode(self, z):
         z = F.relu(self.dec_input_layer(z))
@@ -50,18 +53,32 @@ class VAE(nn.Module):
 
     def forward(self, x):
         mu, logvar = self.encode(x.view(-1, self.input_size))
-        z = self.reparam(mu, logvar)
+        z = self.sample_latent(mu, logvar)
+        x_recon = self.decode(z)
+        return x_recon, mu, logvar, z
 
-        return self.decode(z), mu, logvar
+    def loss_function(self, x, x_recon, mu, logvar, z):
+        qzx = dist.normal.Normal(loc=mu, scale=torch.exp(logvar / 2))
+        pz = dist.normal.Normal(loc=torch.zeros_like(mu), scale=torch.ones_like(logvar))
 
+        pxz = dist.normal.Normal(loc=x_recon, scale=torch.exp(self.log_scale))
 
-def loss_function(x_reconstructed, x, mu, logvar):
-    KL_TERM = 0.5 * torch.sum(1 + logvar - torch.pow(mu, 2) - torch.exp(logvar))
+        log_p_x_z = pxz.log_prob(x)
 
-    reconstruction_error = F.binary_cross_entropy(x_reconstructed, x.view(-1, x_reconstructed.shape[-1]),
-                                                  reduction='sum')
+        log_p_z = pz.log_prob(z)
 
-    return - KL_TERM + reconstruction_error
+        log_q_z_x = qzx.log_prob(z)
+
+        # need to sum across all pixels to get joint probability
+        log_p_x_z_per_batch = torch.sum(log_p_x_z, dim=1)
+
+        # need to average
+        log_p_z_per_batch = torch.sum(log_p_z, dim=1)
+        log_q_z_x_per_batch = torch.sum(log_q_z_x, dim=1)
+        ELBO = log_p_x_z_per_batch + log_p_z_per_batch - log_q_z_x_per_batch
+
+        return -torch.mean(ELBO)
+
 
 def train(epoch, model, device, optimiser, pbar, print_interval=100):
     # set model in train mode
@@ -73,8 +90,8 @@ def train(epoch, model, device, optimiser, pbar, print_interval=100):
         # move data to device of model
         data = data.to(device)
         optimiser.zero_grad()
-        reconstructions, mu, logvar = model(data)
-        loss = loss_function(reconstructions, data, mu, logvar)
+        reconstructions, mu, logvar, z_samples = model(data)
+        loss = model.loss_function(data.view(-1, reconstructions.shape[-1]), reconstructions, mu, logvar, z_samples)
         loss.backward()
         epoch_loss += loss.item()
         optimiser.step()
@@ -93,8 +110,8 @@ def test(epoch, model, device):
         for batch_idx, (data, _) in enumerate(test_loader):
             i += 1
             data = data.to(device)
-            reconstructions, mu, logvar = model(data)
-            test_loss += loss_function(reconstructions, data, mu, logvar).item()
+            reconstructions, mu, logvar, z_samples = model(data)
+            test_loss += model.loss_function(data.view(-1, reconstructions.shape[-1]), reconstructions, mu, logvar, z_samples).item()
             if batch_idx == 0:
                 n_examples = min(data.size(0), 4)
                 comparison = torch.cat([data[:n_examples], reconstructions.view(data.size(0), 1, 28, 28)[:n_examples]])
@@ -106,7 +123,7 @@ def test(epoch, model, device):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     seed = 100
-    batch_size = 64
+    batch_size = 128
     torch.manual_seed(seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -120,11 +137,11 @@ if __name__ == '__main__':
         datasets.MNIST('../data', train=False, transform=transforms.ToTensor()),
         batch_size=batch_size, shuffle=True, **kwargs)
 
-    model_kwargs = {'input_size': 784, 'enc_num_hidden_layers': 3, 'dec_num_hidden_layers': 3,
+    model_kwargs = {'input_size': 784, 'enc_num_hidden_layers': 1, 'dec_num_hidden_layers': 1,
                     'enc_latent_size': 500, 'dec_latent_size': 500, 'latent_dim': 2}
     model = VAE(**model_kwargs)
     model.to(device)
-    optimiser = torch.optim.Adam(model.parameters(), lr=3e-3)
+    optimiser = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     # # lets load the model
     # model.load_state_dict(torch.load("../saved_models/vae/2dimlatent"))
@@ -150,7 +167,7 @@ if __name__ == '__main__':
     # lets save one latent example
     example_batch, _ = next(iter(test_loader))
     example_image = example_batch[0]
-    example_reconstructed, example_mu, example_logvar = model(example_image)
+    example_reconstructed, example_mu, example_logvar, z_samples = model(example_image)
 
     # form variational posterior object
     target_dist = dist.multivariate_normal.MultivariateNormal(loc=example_mu[0].detach(),
@@ -187,3 +204,4 @@ if __name__ == '__main__':
          example_reconstructed.view(1, 1, 28, 28),
          model.decode(target_dist.sample((4,))).view(4, 1, 28, 28), compressed_reconstruction.view(1, 1, 28, 28)])
     save_image(comparison.cpu(), f"../results/vae/2d/compressed_reconstruction.png")
+
