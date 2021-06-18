@@ -131,8 +131,8 @@ class Encoder:
                 self.selected_samples_mixing_weights[:n_samples_to_add] = new_mixing_weights
 
     def run_encoder(self):
-        for i in tqdm(range(self.n_auxiliary)):
-        #for i in range(self.n_auxiliary):
+        #for i in tqdm(range(self.n_auxiliary)):
+        for i in range(self.n_auxiliary):
             # set the seed
             seed = i + self.initial_seed
             # create new auxiliary prior distribution, p(a_k)
