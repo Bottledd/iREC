@@ -149,9 +149,8 @@ class Encoder:
 
 
 if __name__ == '__main__':
-    torch.set_default_tensor_type(torch.DoubleTensor)
-    initial_seed_target = 69
-    blr = BayesLinRegressor(prior_mean=torch.zeros(50),
+    initial_seed_target = 10
+    blr = BayesLinRegressor(prior_mean=torch.zeros(2),
                             prior_alpha=1,
                             signal_std=1,
                             num_targets=10000,
@@ -164,10 +163,9 @@ if __name__ == '__main__':
     coding_sampler = CodingSampler
     auxiliary_posterior = EmpiricalMixturePosterior
     selection_sampler = GreedySampler
-    omega = 8
-    n_samples_from_target = 100
-
-    initial_seed = 10
+    n_samples_from_target = 50
+    omega = 5
+    initial_seed = 950085
 
     encoder = Encoder(target,
                       initial_seed,

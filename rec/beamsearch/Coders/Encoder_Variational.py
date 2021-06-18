@@ -60,9 +60,8 @@ class Encoder:
 
         # auxiliary samples that are selected
         # keep track of samples themselves and indices separately so we can check to ensure they agree
-        # randomly select an integer to mask with
-        self.rand_int = torch.randint(low=1000, high=10000, size=(1,))
-        self.selected_samples = torch.ones((self.beamwidth, self.n_auxiliary, self.problem_dimension)) * self.rand_int
+
+        self.selected_samples = torch.ones((self.beamwidth, self.n_auxiliary, self.problem_dimension)) * float('nan')
         self.selected_samples_indices = torch.zeros((self.beamwidth, self.n_auxiliary,))
 
         # need to keep track of joint probabilities
@@ -164,7 +163,7 @@ class Encoder:
 
             elif self.n_auxiliary - 1 > i > 0:
                 # first need to ignore any unfilled beams from previous run, i.e. mask 0 values
-                mask = self.selected_samples[:, i - 1].ne(self.rand_int)
+                mask = self.selected_samples[:, i - 1].ne(float('nan'))
                 expanded_mask = torch.repeat_interleave(mask[:, None, :], self.n_auxiliary, dim=1)
                 single_dim_mask = mask[:, 0]
                 pruned_beams = torch.masked_select(self.selected_samples, expanded_mask).reshape(-1, self.n_auxiliary,
@@ -233,7 +232,7 @@ class Encoder:
                 trial_aks = selection_sampler.get_samples_from_coder()
                 repeated_aks = torch.repeat_interleave(trial_aks, self.beamwidth, dim=0)
                 indices, samples = selection_sampler.choose_samples_to_transmit(samples=repeated_aks,
-                                                                                previous_samples=self.selected_samples, )
+                                                                                previous_samples=self.selected_samples[:, :i],)
 
                 # now need to convert indices from flattened to refer to specific beam/ak sample
                 beam_indices, sample_indices = convert_flattened_indices(indices, beamwidth=self.beamwidth)
@@ -247,7 +246,7 @@ class Encoder:
 
 if __name__ == '__main__':
     initial_seed_target = 1
-    blr = BayesLinRegressor(prior_mean=torch.zeros(50),
+    blr = BayesLinRegressor(prior_mean=torch.zeros(2),
                             prior_alpha=1,
                             signal_std=1,
                             num_targets=10000,
