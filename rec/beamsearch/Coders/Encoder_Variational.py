@@ -246,9 +246,9 @@ class Encoder:
 
 if __name__ == '__main__':
     initial_seed_target = 1
-    blr = BayesLinRegressor(prior_mean=torch.zeros(2),
+    blr = BayesLinRegressor(prior_mean=torch.zeros(50),
                             prior_alpha=1,
-                            signal_std=1,
+                            signal_std=1e-1,
                             num_targets=10000,
                             seed=initial_seed_target)
     blr.sample_feature_inputs()
@@ -262,9 +262,9 @@ if __name__ == '__main__':
     omega = 5
 
     var_target = compute_variational_posterior(true_target)
-    initial_seed = 950085
+    initial_seed = 136044
 
-    beamwidth = 50
+    beamwidth = 1
     epsilon = 0.
     encoder = Encoder(var_target,
                       initial_seed,

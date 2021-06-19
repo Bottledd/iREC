@@ -261,8 +261,8 @@ class Encoder:
 
 
 if __name__ == '__main__':
-    initial_seed_target = 10
-    blr = BayesLinRegressor(prior_mean=torch.zeros(2),
+    initial_seed_target = 20
+    blr = BayesLinRegressor(prior_mean=torch.zeros(10),
                             prior_alpha=1,
                             signal_std=1,
                             num_targets=10000,
@@ -276,11 +276,11 @@ if __name__ == '__main__':
     auxiliary_posterior = EmpiricalMixturePosterior
     selection_sampler = GreedySampler
     n_samples_from_target = 50
-    omega = 3
-    initial_seed = 950085
+    omega = 5
+    initial_seed = 0
 
-    beamwidth = 10
-    epsilon = 0.3
+    beamwidth = 1
+    epsilon = 0.
     encoder = Encoder(target,
                       initial_seed,
                       coding_sampler,
@@ -313,7 +313,7 @@ if __name__ == '__main__':
     z, indices = encoder.run_encoder()
     best_sample_idx = torch.argmax(target.log_prob(z))
     best_sample = z[best_sample_idx]
-    # plot_pairs_of_samples(target, encoder.selected_samples[best_sample_idx])
+    plot_pairs_of_samples(target, encoder.selected_samples[best_sample_idx])
     mahalanobis_dist = torch.sqrt((target.mean - best_sample).T@target.covariance_matrix @(target.mean - best_sample))
 
     # import sys
@@ -331,11 +331,13 @@ if __name__ == '__main__':
     # plot_samples_in_2d(target=target)
     # plot_samples_in_2d(empirical_samples=encoder.auxiliary_posterior.empirical_samples)
     # plot_samples_in_2d(coded_sample=best_sample)
-    plot_2d_distribution(target)
-    plot_running_sum_2d(encoder.selected_samples[best_sample_idx], plot_index_labels=True)
-    plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
-             'x')
-    plt.plot(best_sample[0], best_sample[1], 'o')
-    plt.savefig(f"../../../Figures/Presentation/empirical_beam{beamwidth}_epsilon{epsilon}.png", bbox_inches='tight')
-    plt.show()
-    # sys.stdout.close()
+    # plot_2d_distribution(target)
+    # plot_running_sum_2d(encoder.selected_samples[best_sample_idx], plot_index_labels=True)
+    # # plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
+    # #          'x')
+    # plt.plot(best_sample[0], best_sample[1], 'o')
+    # #plt.savefig(f"../../../Figures/Presentation/empirical_beam{beamwidth}_epsilon{epsilon}.png", bbox_inches='tight')
+    # plt.show()
+    # blr.plot_regression_with_uncertainty(plot_samples=True)
+    # blr.plot_sampled_regressor(z[0])
+    # # sys.stdout.close()

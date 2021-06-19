@@ -88,7 +88,7 @@ def plot_pairs_of_samples(target, coded_sample, num_samples=10000, empirical_sam
     rows = dim // 2
     running_sum = torch.cumsum(coded_sample, dim=0)
     final_sample = running_sum[-1]
-    fig, ax = plt.subplots(rows, columns, figsize=(10, 15))
+    fig, ax = plt.subplots(columns, rows, figsize=(10, 5))
 
     for i in range(rows):
         ax[i].plot(samples[:, 2 * i], samples[:, 2 * i + 1], 'x')

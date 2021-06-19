@@ -75,7 +75,7 @@ class VAE(nn.Module):
         # need to average
         log_p_z_per_batch = torch.sum(log_p_z, dim=1)
         log_q_z_x_per_batch = torch.sum(log_q_z_x, dim=1)
-        ELBO = log_p_x_z_per_batch + log_p_z_per_batch - log_q_z_x_per_batch
+        ELBO = log_p_x_z_per_batch + 0.5 * (log_p_z_per_batch - log_q_z_x_per_batch)
 
         return -torch.mean(ELBO)
 
@@ -122,6 +122,8 @@ def test(epoch, model, device):
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
+    from pathlib import Path
+    import os
     seed = 100
     batch_size = 128
     torch.manual_seed(seed)
@@ -138,13 +140,14 @@ if __name__ == '__main__':
         batch_size=batch_size, shuffle=True, **kwargs)
 
     model_kwargs = {'input_size': 784, 'enc_num_hidden_layers': 1, 'dec_num_hidden_layers': 1,
-                    'enc_latent_size': 500, 'dec_latent_size': 500, 'latent_dim': 2}
+                    'enc_latent_size': 500, 'dec_latent_size': 500, 'latent_dim': 50}
     model = VAE(**model_kwargs)
     model.to(device)
     optimiser = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    # # lets load the model
-    # model.load_state_dict(torch.load("../saved_models/vae/2dimlatent"))
+    # lets load the model
+    target_path = os.path.join(Path.cwd().parent, "saved_models/vae/50dlatent")
+    # model.load_state_dict(torch.load(target_path))
 
     # lets train our model
     total_epochs = 10
@@ -158,7 +161,7 @@ if __name__ == '__main__':
         test_losses.append(te_loss)
 
     # lets save the model
-    torch.save(model.state_dict(), "../saved_models/vae/2dlatent")
+    torch.save(model.state_dict(),target_path)
     plt.plot(range(1, total_epochs + 1), train_losses, label='train loss')
     plt.plot(range(1, total_epochs + 1), test_losses, label='test loss')
     plt.legend()
