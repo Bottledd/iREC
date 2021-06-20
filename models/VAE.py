@@ -75,7 +75,7 @@ class VAE(nn.Module):
         # need to average
         log_p_z_per_batch = torch.sum(log_p_z, dim=1)
         log_q_z_x_per_batch = torch.sum(log_q_z_x, dim=1)
-        ELBO = log_p_x_z_per_batch + 0.5 * (log_p_z_per_batch - log_q_z_x_per_batch)
+        ELBO = log_p_x_z_per_batch + log_p_z_per_batch - log_q_z_x_per_batch
 
         return -torch.mean(ELBO)
 
@@ -115,7 +115,7 @@ def test(epoch, model, device):
             if batch_idx == 0:
                 n_examples = min(data.size(0), 4)
                 comparison = torch.cat([data[:n_examples], reconstructions.view(data.size(0), 1, 28, 28)[:n_examples]])
-                save_image(comparison.cpu(), f"../results/vae/2d/reconstruction_{epoch}.png", nrow=n_examples)
+                save_image(comparison.cpu(), f"../results/vae/reconstruction_{epoch}.png", nrow=n_examples)
 
     return test_loss / i
 
@@ -139,18 +139,21 @@ if __name__ == '__main__':
         datasets.MNIST('../data', train=False, transform=transforms.ToTensor()),
         batch_size=batch_size, shuffle=True, **kwargs)
 
+    dim = 5
+
     model_kwargs = {'input_size': 784, 'enc_num_hidden_layers': 1, 'dec_num_hidden_layers': 1,
-                    'enc_latent_size': 500, 'dec_latent_size': 500, 'latent_dim': 50}
+                    'enc_latent_size': 500, 'dec_latent_size': 500, 'latent_dim': dim}
+
     model = VAE(**model_kwargs)
     model.to(device)
     optimiser = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     # lets load the model
-    target_path = os.path.join(Path.cwd().parent, "saved_models/vae/50dlatent")
+    target_path = os.path.join(Path.cwd().parent, f"saved_models/vae/{dim}dlatent")
     # model.load_state_dict(torch.load(target_path))
 
     # lets train our model
-    total_epochs = 10
+    total_epochs = 50
     pbar = trange(1, total_epochs + 1)
     train_losses = []
     test_losses = []
@@ -204,7 +207,6 @@ if __name__ == '__main__':
     compressed_reconstruction = model.decode(z[0])
     comparison = torch.cat(
         [example_image[None], model.decode(target_dist.mean).view(1, 1, 28, 28),
-         example_reconstructed.view(1, 1, 28, 28),
-         model.decode(target_dist.sample((4,))).view(4, 1, 28, 28), compressed_reconstruction.view(1, 1, 28, 28)])
-    save_image(comparison.cpu(), f"../results/vae/2d/compressed_reconstruction.png")
+         compressed_reconstruction.view(1, 1, 28, 28)])
+    save_image(comparison.cpu(), f"../results/vae/compressed_reconstruction.png")
 

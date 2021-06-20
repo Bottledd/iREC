@@ -54,7 +54,7 @@ class FinalJointOptimiser(nn.Module):
 
         return loss, torch.mean(aux_kl)
 
-    def run_optimiser(self, epochs=1000):
+    def run_optimiser(self, epochs=1500):
         optimiser = torch.optim.Adam(self.parameters(), lr=3e-2)
         pbar = trange(epochs)
         for i in pbar:
