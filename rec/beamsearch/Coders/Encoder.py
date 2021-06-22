@@ -5,7 +5,7 @@ import torch
 import torch.distributions as dist
 from tqdm import tqdm
 
-from models.BayesianLinRegressor import BayesLinRegressor
+from models.SimpleBayesianLinRegressor import BayesLinRegressor
 from rec.beamsearch.distributions.CodingSampler import CodingSampler
 from rec.beamsearch.distributions.EmpiricalMixturePosterior import EmpiricalMixturePosterior
 from rec.beamsearch.samplers.GreedySampling import GreedySampler
@@ -261,12 +261,11 @@ class Encoder:
 
 
 if __name__ == '__main__':
-    initial_seed_target = 1
-    blr = BayesLinRegressor(prior_mean=torch.zeros(50),
+    blr = BayesLinRegressor(prior_mean=torch.zeros(10),
                             prior_alpha=1,
-                            signal_std=1,
-                            num_targets=50,
-                            seed=initial_seed_target)
+                            signal_std=1 / 10.,
+                            num_targets=20,
+                            seed=1)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
     blr.posterior_update()
@@ -277,7 +276,7 @@ if __name__ == '__main__':
     coding_sampler = CodingSampler
     auxiliary_posterior = EmpiricalMixturePosterior
     selection_sampler = GreedySampler
-    n_samples_from_target = 100
+    n_samples_from_target = 50
     omega = 5
     initial_seed = 100
 
@@ -297,7 +296,7 @@ if __name__ == '__main__':
     n_auxiliaries = encoder.n_auxiliary
     kl_q_p = encoder.total_kl
 
-    option = 2
+    option = -1
 
     if option == 1:
         encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor(
@@ -316,7 +315,7 @@ if __name__ == '__main__':
     best_sample_idx = torch.argmax(target.log_prob(z))
     best_sample = z[best_sample_idx]
     plot_pairs_of_samples(target, encoder.selected_samples[best_sample_idx])
-    mahalanobis_dist = torch.sqrt((target.mean - best_sample).T@target.covariance_matrix @(target.mean - best_sample))
+    plt.show()
 
     # import sys
     # parent_root = "../../../"

@@ -2,7 +2,7 @@ import torch
 import torch.distributions as dist
 import torch.nn as nn
 from tqdm import trange
-from models.BayesianLinRegressor import BayesLinRegressor
+from models.SimpleBayesianLinRegressor import BayesLinRegressor
 from rec.utils import kl_estimate_with_mc
 import math
 import matplotlib.pyplot as plt

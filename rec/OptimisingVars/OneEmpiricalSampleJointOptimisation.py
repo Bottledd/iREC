@@ -4,7 +4,7 @@ import torch.distributions as dist
 import torch.nn as nn
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from models.BayesianLinRegressor import BayesLinRegressor
+from models.SimpleBayesianLinRegressor import BayesLinRegressor
 from rec.utils import kl_estimate_with_mc, plot_2d_distribution
 import numpy as np
 

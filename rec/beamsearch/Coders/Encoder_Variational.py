@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.distributions as dist
 from tqdm import tqdm
-from models.BayesianLinRegressor import BayesLinRegressor
+from models.SimpleBayesianLinRegressor import BayesLinRegressor
 from rec.OptimisingVars.VariationalOptimiser import VariationalOptimiser
 from rec.beamsearch.distributions.CodingSampler import CodingSampler
 from rec.beamsearch.distributions.VariationalPosterior import VariationalPosterior
@@ -247,14 +247,14 @@ class Encoder:
 if __name__ == '__main__':
     blr = BayesLinRegressor(prior_mean=torch.zeros(10),
                             prior_alpha=1,
-                            signal_std=1,
-                            num_targets=50,
+                            signal_std=1 / 10.,
+                            num_targets=20,
                             seed=1)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
     blr.posterior_update()
-    true_target = blr.weight_posterior
-    plt.imshow(true_target.covariance_matrix)
+    target = blr.weight_posterior
+    plt.imshow(target.covariance_matrix)
     plt.show()
 
     coding_sampler = CodingSampler
@@ -262,7 +262,7 @@ if __name__ == '__main__':
     selection_sampler = GreedySampler
     omega = 5
 
-    var_target = compute_variational_posterior(true_target)
+    var_target = compute_variational_posterior(target)
     initial_seed = 100
 
     beamwidth = 1
@@ -295,9 +295,10 @@ if __name__ == '__main__':
         pass
 
     z, indices = encoder.run_encoder()
-    best_sample_idx = torch.argmax(true_target.log_prob(z))
+    best_sample_idx = torch.argmax(var_target.log_prob(z))
     best_sample = z[best_sample_idx]
-    # plot_pairs_of_samples(true_target, encoder.selected_samples[best_sample_idx])
+    plot_pairs_of_samples(target, encoder.selected_samples[best_sample_idx])
+    plt.show()
     # mahalanobis_dist = torch.sqrt(
     #     (true_target.mean - best_sample).T @ true_target.covariance_matrix @ (true_target.mean - best_sample))
     #

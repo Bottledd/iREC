@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.distributions as dist
 from tqdm import tqdm
-from models.BayesianLinRegressor import BayesLinRegressor
+from models.SimpleBayesianLinRegressor import BayesLinRegressor
 from rec.OptimisingVars.CodingSampler import CodingSampler
 from rec.OptimisingVars.EmpiricalMixturePosterior import EmpiricalMixturePosterior
 from rec.utils import kl_estimate_with_mc

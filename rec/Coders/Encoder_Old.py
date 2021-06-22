@@ -5,7 +5,7 @@ import torch
 import torch.distributions as dist
 from tqdm import tqdm
 
-from models.BayesianLinRegressor import BayesLinRegressor
+from models.SimpleBayesianLinRegressor import BayesLinRegressor
 from rec.distributions.CodingSampler import CodingSampler
 from rec.distributions.EmpiricalMixturePosterior_Old import EmpiricalMixturePosterior
 from rec.samplers.GreedySampling import GreedySampler

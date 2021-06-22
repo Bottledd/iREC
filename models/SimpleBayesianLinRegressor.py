@@ -1,7 +1,7 @@
 import torch
 import torch.distributions as dst
 import matplotlib.pyplot as plt
-from rec.utils import compute_variational_posterior
+from rec.utils import compute_variational_posterior, plot_2d_distribution
 
 class BayesLinRegressor:
     def __init__(self,
@@ -29,11 +29,11 @@ class BayesLinRegressor:
 
     def sample_feature_inputs(self):
         standard_normal = dst.Normal(loc=0.0, scale=1.0)
-        #standard_normal = dst.Uniform(-100, 100)
+        #standard_normal = dst.Uniform(-1, 1)
         self.feature_targets = standard_normal.sample((self.num_targets, self.dim))
 
-        # train test split with 75% train
-        num_train_samples = int(self.num_targets * 0.75)
+        # train with min(num_targets / 10, dim)
+        num_train_samples = int(self.dim)
         self.feature_targets_train = self.feature_targets[:num_train_samples]
         self.feature_targets_test = self.feature_targets[num_train_samples:]
 
@@ -54,7 +54,8 @@ class BayesLinRegressor:
         additive_noise = epsilon.sample(feature_times_weights.shape)
         self.regression_targets = feature_times_weights + additive_noise
 
-        num_train_samples = int(self.num_targets * 0.75)
+        # train with min(num_targets / 10, dim)
+        num_train_samples = int(self.dim)
         self.regression_targets_train = self.regression_targets[:num_train_samples]
         self.regression_targets_test = self.regression_targets[num_train_samples:]
 
@@ -102,7 +103,7 @@ class BayesLinRegressor:
     def plot_regression_with_uncertainty(self, plot_samples=False):
         if plot_samples:
             plt.plot(self.feature_targets, self.regression_targets, 'o', label="observations")
-        x_axis = torch.linspace(-10, 10, 1000)
+        x_axis = torch.linspace(-1, 1, 1000)
         mean, error = self.predictive_distribution(x_axis.reshape(-1, 1))
         plt.plot(x_axis, mean, '-', color='red')
         plt.fill_between(x_axis, mean - 1.96 * error ** 0.5, mean + 1.96 * error ** 0.5,
@@ -201,10 +202,10 @@ class BayesLinRegressor:
 
 
 if __name__ == '__main__':
-    blr = BayesLinRegressor(prior_mean=torch.zeros(20),
+    blr = BayesLinRegressor(prior_mean=torch.zeros(10),
                             prior_alpha=1,
-                            signal_std=1,
-                            num_targets=50,
+                            signal_std=1/10.,
+                            num_targets=20,
                             seed=1)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
@@ -215,5 +216,7 @@ if __name__ == '__main__':
     var_approx = compute_variational_posterior(target)
     print(f'{dst.kl_divergence(target, var_approx)}')
     print(f'{dst.kl_divergence(target, blr.weight_prior)}')
-    # blr.plot_regression_with_uncertainty()
-    # plt.show()
+    plot_2d_distribution(target)
+    plt.show()
+    blr.plot_regression_with_uncertainty()
+    plt.show()

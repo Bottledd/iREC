@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import torch
 from tqdm import tqdm
-from models.BayesianLinRegressor import BayesLinRegressor
+from models.SimpleBayesianLinRegressor import BayesLinRegressor
 from rec.Coders.Encoder_Old import Encoder
 from rec.distributions.CodingSampler import CodingSampler
 from rec.distributions.EmpiricalMixturePosterior_Old import EmpiricalMixturePosterior
