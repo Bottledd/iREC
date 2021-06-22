@@ -1,7 +1,7 @@
 import torch
 import torch.distributions as dst
 import matplotlib.pyplot as plt
-
+from rec.utils import compute_variational_posterior
 
 class BayesLinRegressor:
     def __init__(self,
@@ -29,7 +29,7 @@ class BayesLinRegressor:
 
     def sample_feature_inputs(self):
         standard_normal = dst.Normal(loc=0.0, scale=1.0)
-        # standard_normal = dst.Uniform(-10, 10)
+        #standard_normal = dst.Uniform(-100, 100)
         self.feature_targets = standard_normal.sample((self.num_targets, self.dim))
 
         # train test split with 75% train
@@ -68,6 +68,19 @@ class BayesLinRegressor:
 
         post_mean = (1 / self.signal_std ** 2) * (
                 torch.inverse(post_precision) @ feature_matrix.T @ self.regression_targets_train)
+
+        self.weight_posterior = dst.MultivariateNormal(loc=post_mean, precision_matrix=post_precision)
+
+    def custom_posterior_update(self, feature_targets, regression_targets):
+        # make feature matrix
+        feature_matrix = torch.hstack((feature_targets, torch.ones(feature_targets.shape[0], 1)))
+
+        # compute posterior covariance
+        post_precision = (1 / self.signal_std ** 2) * (
+                feature_matrix.T @ feature_matrix) + self.weight_prior.precision_matrix
+
+        post_mean = (1 / self.signal_std ** 2) * (
+                torch.inverse(post_precision) @ feature_matrix.T @ regression_targets)
 
         self.weight_posterior = dst.MultivariateNormal(loc=post_mean, precision_matrix=post_precision)
 
@@ -110,16 +123,24 @@ class BayesLinRegressor:
         plt.show()
 
     def predictive_distribution(self, inputs):
-        design_matrix = torch.hstack((inputs, torch.ones(inputs.shape[0], 1))) # shape [num_targets, dim]
+        design_matrix = torch.hstack((inputs, torch.ones(inputs.shape[0], 1)))  # shape [num_targets, dim]
 
         mean = self.weight_posterior.mean
         covariance = self.weight_posterior.covariance_matrix
         mean_matrix = torch.tile(mean, (design_matrix.shape[0], 1))
         covar_matrix = torch.tile(covariance, (design_matrix.shape[0], 1, 1))
         predictive_mean = torch.einsum("ij, ij -> i", mean_matrix, design_matrix)
-        predictive_variance = torch.einsum("bi, bik, bk -> b", design_matrix, covar_matrix, design_matrix) + self.signal_std ** 2
+        predictive_variance = torch.einsum("bi, bik, bk -> b", design_matrix, covar_matrix,
+                                           design_matrix) + self.signal_std ** 2
 
         return predictive_mean, predictive_variance
+
+    def plot_predictive(self, inputs):
+        x_axis = inputs.reshape(-1,1)
+        mean, error = self.predictive_distribution(inputs.reshape(-1, 1))
+        plt.plot(x_axis, mean, '-', color='red')
+        plt.fill_between(x_axis, mean - 1.96 * error ** 0.5, mean + 1.96 * error ** 0.5,
+                         color='gray', alpha=0.2)
 
     def empirical_prediction(self, weights):
         # broadcast to correct shapes
@@ -180,13 +201,19 @@ class BayesLinRegressor:
 
 
 if __name__ == '__main__':
-    blr = BayesLinRegressor(prior_mean=torch.zeros(2),
-                        prior_alpha=1,
-                        signal_std=1,
-                        num_targets=10000,
-                        seed=10)
+    blr = BayesLinRegressor(prior_mean=torch.zeros(20),
+                            prior_alpha=1,
+                            signal_std=1,
+                            num_targets=50,
+                            seed=1)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
     blr.posterior_update()
     target = blr.weight_posterior
-    blr.plot_regression_with_uncertainty(plot_samples=True)
+    plt.imshow(target.covariance_matrix)
+    plt.show()
+    var_approx = compute_variational_posterior(target)
+    print(f'{dst.kl_divergence(target, var_approx)}')
+    print(f'{dst.kl_divergence(target, blr.weight_prior)}')
+    # blr.plot_regression_with_uncertainty()
+    # plt.show()

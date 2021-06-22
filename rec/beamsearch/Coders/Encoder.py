@@ -261,23 +261,25 @@ class Encoder:
 
 
 if __name__ == '__main__':
-    initial_seed_target = 20
-    blr = BayesLinRegressor(prior_mean=torch.zeros(10),
+    initial_seed_target = 1
+    blr = BayesLinRegressor(prior_mean=torch.zeros(50),
                             prior_alpha=1,
                             signal_std=1,
-                            num_targets=10000,
+                            num_targets=50,
                             seed=initial_seed_target)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
     blr.posterior_update()
     target = blr.weight_posterior
+    plt.imshow(target.covariance_matrix)
+    plt.show()
 
     coding_sampler = CodingSampler
     auxiliary_posterior = EmpiricalMixturePosterior
     selection_sampler = GreedySampler
-    n_samples_from_target = 50
+    n_samples_from_target = 100
     omega = 5
-    initial_seed = 0
+    initial_seed = 100
 
     beamwidth = 1
     epsilon = 0.
@@ -295,7 +297,7 @@ if __name__ == '__main__':
     n_auxiliaries = encoder.n_auxiliary
     kl_q_p = encoder.total_kl
 
-    option = -1
+    option = 2
 
     if option == 1:
         encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor(
