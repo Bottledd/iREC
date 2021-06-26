@@ -139,7 +139,7 @@ class Encoder:
             auxiliary_prior = self.auxiliary_posterior.coding_sampler.auxiliary_coding_dist(i)
 
             # need to do something different for first auxiliary variable
-            if i == 0:
+            if i == 0 and self.n_auxiliary > 1:
                 # if beamwidth > n_samples_per_aux select at most n_samples_per_aux on first round
                 if self.beamwidth > self.n_samples_per_aux:
                     n_selections = self.n_samples_per_aux
@@ -261,10 +261,11 @@ class Encoder:
 
 
 if __name__ == '__main__':
-    blr = BayesLinRegressor(prior_mean=torch.zeros(10),
+    torch.set_default_tensor_type(torch.DoubleTensor)
+    blr = BayesLinRegressor(prior_mean=torch.zeros(5),
                             prior_alpha=1,
-                            signal_std=1 / 10.,
-                            num_targets=20,
+                            signal_std=1e-2,
+                            num_targets=100,
                             seed=1)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
@@ -280,7 +281,7 @@ if __name__ == '__main__':
     omega = 5
     initial_seed = 100
 
-    beamwidth = 1
+    beamwidth = 20
     epsilon = 0.
     encoder = Encoder(target,
                       initial_seed,
@@ -314,7 +315,7 @@ if __name__ == '__main__':
     z, indices = encoder.run_encoder()
     best_sample_idx = torch.argmax(target.log_prob(z))
     best_sample = z[best_sample_idx]
-    plot_pairs_of_samples(target, encoder.selected_samples[best_sample_idx])
+    plot_pairs_of_samples(target, encoder.selected_samples[best_sample_idx], empirical_samples=encoder.auxiliary_posterior.empirical_samples)
     plt.show()
 
     # import sys

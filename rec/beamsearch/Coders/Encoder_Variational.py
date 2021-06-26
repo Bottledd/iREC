@@ -22,7 +22,7 @@ class Encoder:
                  auxiliary_posterior,
                  omega,
                  beamwidth,
-                 epsilon=0,
+                 epsilon=0.,
                  ):
         # instantiate the beamwidth
         self.beamwidth = beamwidth
@@ -124,7 +124,7 @@ class Encoder:
             auxiliary_prior = self.auxiliary_posterior.coding_sampler.auxiliary_coding_dist(i)
 
             # need to do something different for first auxiliary variable
-            if i == 0:
+            if i == 0 and self.n_auxiliary > 1:
                 # if beamwidth > n_samples_per_aux select at most n_samples_per_aux on first round
                 if self.beamwidth > self.n_samples_per_aux:
                     n_selections = self.n_samples_per_aux
@@ -245,10 +245,11 @@ class Encoder:
 
 
 if __name__ == '__main__':
+    torch.set_default_tensor_type(torch.DoubleTensor)
     blr = BayesLinRegressor(prior_mean=torch.zeros(10),
                             prior_alpha=1,
-                            signal_std=1 / 10.,
-                            num_targets=20,
+                            signal_std=1e-1,
+                            num_targets=100,
                             seed=1)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
@@ -265,7 +266,7 @@ if __name__ == '__main__':
     var_target = compute_variational_posterior(target)
     initial_seed = 100
 
-    beamwidth = 1
+    beamwidth = 20
     epsilon = 0.
     encoder = Encoder(var_target,
                       initial_seed,

@@ -202,10 +202,10 @@ class BayesLinRegressor:
 
 
 if __name__ == '__main__':
-    blr = BayesLinRegressor(prior_mean=torch.zeros(10),
+    blr = BayesLinRegressor(prior_mean=torch.zeros(2),
                             prior_alpha=1,
-                            signal_std=1/10.,
-                            num_targets=20,
+                            signal_std=1e-1,
+                            num_targets=50,
                             seed=1)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
@@ -218,5 +218,7 @@ if __name__ == '__main__':
     print(f'{dst.kl_divergence(target, blr.weight_prior)}')
     plot_2d_distribution(target)
     plt.show()
-    blr.plot_regression_with_uncertainty()
+    plot_2d_distribution(compute_variational_posterior(target))
     plt.show()
+    # blr.plot_regression_with_uncertainty()
+    # plt.show()
