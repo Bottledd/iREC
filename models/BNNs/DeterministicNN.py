@@ -1,22 +1,25 @@
+import matplotlib.pyplot as plt
 import torch
 import torch.distributions as D
 import torch.nn as nn
 from torch.nn import functional as F
-import matplotlib.pyplot as plt
 
 from models.BNNs.Layers.DeterministicLayer import DeterministicLayer
 
+
 class Deterministic_NN(nn.Module):
-    def __init__(self, input_size=1, num_nodes=5, output_size=1, alpha=1., beta=5.):
+    def __init__(self, input_size=1, num_nodes=10, output_size=1, alpha=1., beta=5.):
         super(Deterministic_NN, self).__init__()
         self.input_size = input_size
         self.input_layer = DeterministicLayer(input_size, num_nodes)
+        self.hidden_layer = DeterministicLayer(num_nodes, num_nodes)
         self.final_layer = DeterministicLayer(num_nodes, output_size)
         self.prior_alpha = alpha
         self.likelihood_beta = beta
 
     def forward(self, x):
         x = F.relu(self.input_layer(x.view(-1, 1)))
+        x = F.relu(self.hidden_layer(x))
         x = self.final_layer(x)
         return x
 
@@ -39,49 +42,60 @@ class Deterministic_NN(nn.Module):
                                           covariance_matrix=(1. / self.prior_alpha) * torch.eye(weights.shape[0]))
 
         weight_sample = prior_dist.sample()
-        input_layer_shape = self.input_layer.weight.shape[1]
-        input_layer_sample_weights = weight_sample[:input_layer_shape]
-        input_layer_sample_bias = weight_sample[input_layer_shape]
-        final_layer_shape = self.final_layer.weight.shape[0]
-        final_layer_sample_weights = weight_sample[input_layer_shape + 1: input_layer_shape + 1 + final_layer_shape]
-        final_layer_sample_bias = weight_sample[input_layer_shape + 1 + final_layer_shape]
+        current_idx = 0
+        input_layer_shape = self.input_layer.weight.shape
+        input_layer_len = input_layer_shape[1]
+        input_layer_sample_weights = weight_sample[current_idx: current_idx + input_layer_len]
+        current_idx = current_idx + input_layer_len
+        input_layer_sample_bias = weight_sample[current_idx: current_idx + input_layer_len]
+        current_idx = current_idx + input_layer_len
+        hidden_layer_shape = self.hidden_layer.weight.shape
+        hidden_layer_len = hidden_layer_shape[0] * hidden_layer_shape[1]
+        hidden_layer_sample_weights = weight_sample[current_idx: current_idx + hidden_layer_len]
+        current_idx = current_idx + hidden_layer_len
+        hidden_layer_sample_bias = weight_sample[current_idx: current_idx + hidden_layer_shape[1]]
+        current_idx = current_idx + hidden_layer_shape[1]
+        final_layer_shape = self.final_layer.weight.shape
+        final_layer_len = final_layer_shape[0]
+        final_layer_sample_weights = weight_sample[current_idx: current_idx + final_layer_len]
+        current_idx = current_idx + final_layer_len
+        final_layer_sample_bias = weight_sample[current_idx]
 
         return weight_sample, input_layer_sample_weights, input_layer_sample_bias, final_layer_sample_weights, final_layer_sample_bias
 
     def make_weights_from_sample(self, weight_sample):
+        current_idx = 0
         input_layer_shape = self.input_layer.weight.shape
         input_layer_len = input_layer_shape[1]
-        input_layer_sample_weights = weight_sample[:input_layer_len]
-        input_layer_sample_bias = weight_sample[input_layer_len : 2 * input_layer_len]
+        input_layer_sample_weights = weight_sample[current_idx: current_idx + input_layer_len]
+        current_idx = current_idx + input_layer_len
+        input_layer_sample_bias = weight_sample[current_idx: current_idx + input_layer_len]
+        current_idx = current_idx + input_layer_len
+        hidden_layer_shape = self.hidden_layer.weight.shape
+        hidden_layer_len = hidden_layer_shape[0] * hidden_layer_shape[1]
+        hidden_layer_sample_weights = weight_sample[current_idx: current_idx + hidden_layer_len]
+        current_idx = current_idx + hidden_layer_len
+        hidden_layer_sample_bias = weight_sample[current_idx: current_idx + hidden_layer_shape[1]]
+        current_idx = current_idx + hidden_layer_shape[1]
         final_layer_shape = self.final_layer.weight.shape
         final_layer_len = final_layer_shape[0]
-        final_layer_sample_weights = weight_sample[2 * input_layer_len: 2 * input_layer_len + final_layer_len]
-        final_layer_sample_bias = weight_sample[2 * input_layer_len + final_layer_len]
+        final_layer_sample_weights = weight_sample[current_idx: current_idx + final_layer_len]
+        current_idx = current_idx + final_layer_len
+        final_layer_sample_bias = weight_sample[current_idx]
+
+        # check weights are the same
+        check = torch.zeros([0])
+        check = torch.cat([input_layer_sample_weights.flatten(), input_layer_sample_bias.flatten(),
+                           hidden_layer_sample_weights.flatten(), hidden_layer_sample_bias.flatten(),
+                           final_layer_sample_weights.flatten(), final_layer_sample_bias.flatten()])
 
         self.input_layer.weight = nn.Parameter(input_layer_sample_weights.reshape(input_layer_shape))
         self.input_layer.bias = nn.Parameter(input_layer_sample_bias)
+        self.hidden_layer.weight = nn.Parameter(hidden_layer_sample_weights.reshape(hidden_layer_shape))
+        self.hidden_layer.bias = nn.Parameter(hidden_layer_sample_bias)
         self.final_layer.weight = nn.Parameter(final_layer_sample_weights.reshape(final_layer_shape))
         self.final_layer.bias = nn.Parameter(final_layer_sample_bias)
 
-
-class Variational_BNN(nn.Module):
-    def __init__(self, input_size=1, num_nodes=5, output_size=1, alpha=1., beta=5.):
-        super(Variational_BNN, self).__init__()
-        self.input_size = input_size
-        self.input_layer = nn.Linear(input_size, num_nodes)
-        self.final_layer = nn.Linear(num_nodes, output_size)
-        self.prior_alpha = alpha
-        self.likelihood_beta = beta
-        self.post_mean = nn.Parameter()
-
-class BayesianLinearLayer(nn.Module):
-    def __init__(self, in_features, out_features):
-        super(BayesianLinearLayer, self).__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-
-        # weight parameters
-        self.weight_mu = nn.Parameter(torch.tensor(out_features, ))
 
 def train_model(model, x, y):
     opt = torch.optim.Adam(model.parameters(), lr=0.1)
