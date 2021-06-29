@@ -13,7 +13,7 @@ def hmc(initialising_distribution, x, y, model, step_size, num_inner_steps, num_
     for i in pbar:
         if k > 25:
             k = 0
-            if torch.mean(p_accepts[-25:]) > 0.2:
+            if torch.mean(p_accepts[-25:]) > 0.65:
                 step_size = step_size * 1.1
             else:
                 step_size = step_size * 0.9
@@ -56,6 +56,7 @@ def hmc(initialising_distribution, x, y, model, step_size, num_inner_steps, num_
             current_z = z
 
         if p_accept != float('inf'):
+            p_accept = torch.clamp_max(p_accept, 1)
             p_accepts = torch.cat([p_accepts, p_accept[None]])
         trajectory = torch.cat([trajectory, current_z[None]])
         k = k + 1
@@ -63,11 +64,12 @@ def hmc(initialising_distribution, x, y, model, step_size, num_inner_steps, num_
 
 
 def U(x: torch.Tensor, y: torch.Tensor, w: torch.Tensor, model: torch.nn.Module):
-    model.make_weights_from_sample(w)
+    with torch.no_grad():
+        model.make_weights_from_sample(w)
     prior_term = 0
-    for weight in model.parameters():
-        prior = D.Normal(loc=torch.zeros_like(weight.flatten()), scale=(1. / model.prior_alpha ** 0.5))
-        prior_term = prior_term + prior.log_prob(weight.flatten()).sum()
+    for param in model.parameters():
+        prior = D.Normal(loc=0, scale=(1. / model.prior_alpha ** 0.5))
+        prior_term = prior_term + prior.log_prob(param.flatten()).sum()
     y_preds = model(x)
     likelihood = D.Normal(loc=y_preds, scale=(1. / model.likelihood_beta ** 0.5))
     likelihood_term = likelihood.log_prob(y).sum()
@@ -82,7 +84,7 @@ def grad_U(x: torch.Tensor, y: torch.Tensor, w: torch.Tensor, model: torch.nn.Mo
     for loss in grad:
         losses = torch.cat([losses, loss.flatten()])
 
-    return losses
+    return torch.clamp(losses, min=-1e3, max=1e3)
 
 
 if __name__ == '__main__':
@@ -100,7 +102,7 @@ if __name__ == '__main__':
 
     # generate some data
     data_generator_model = Deterministic_NN(alpha=alpha, beta=beta)
-    sampled_weights = data_generator_model.sample_weights_from_prior()[0]
+    sampled_weights = data_generator_model.sample_weights_from_prior()
     data_generator_model.make_weights_from_sample(sampled_weights)
     y = data_generator_model(x_star).detach() + (1 / data_generator_model.likelihood_beta ** 0.5) * torch.randn_like(
         data_generator_model(x_star).detach())
@@ -117,17 +119,17 @@ if __name__ == '__main__':
                                  covariance_matrix=(1. / alpha ** 2) * torch.eye(sampled_weights.shape[-1]))
     model = Deterministic_NN(alpha=alpha, beta=beta)
     empirical_samples = torch.zeros([0])
-    torch.manual_seed(0)
-    accepted_samples, traj, p_accepts = hmc(prior, x_star, y_star, model, step_size=torch.tensor([5e-2]),
-                                            num_inner_steps=10, num_outer_steps=2500)
+    torch.manual_seed(20)
+    accepted_samples, traj, p_accepts = hmc(prior, x_star, y_star, model, step_size=torch.tensor([0.01]),
+                                            num_inner_steps=10, num_outer_steps=10000)
 
     print(f"The average acceptance prob is: {p_accepts[100:].mean()}")
 
     # plot accepted samples
-    xs = torch.linspace(-10, 10, 100)
+    xs = torch.linspace(-20, 20, 100)
     xs_star = (xs - x.mean()) / x.std()
-    true_ensemble_preds = torch.zeros([traj[50:].shape[0], xs.shape[0], 1])
-    for i, compressed_sample in enumerate(traj[50:]):
+    true_ensemble_preds = torch.zeros([traj[500:].shape[0], xs.shape[0], 1])
+    for i, compressed_sample in enumerate(traj[500:]):
         ensemble_model = Deterministic_NN(alpha=alpha, beta=beta)
         ensemble_model.make_weights_from_sample(compressed_sample)
         true_ensemble_preds[i] = ensemble_model(xs_star).detach()
@@ -151,7 +153,7 @@ if __name__ == '__main__':
     f.tight_layout()
     f.show()
 
-    for i, point in enumerate(traj.unique(dim=0)[-50:]):
+    for i, point in enumerate(traj.unique(dim=0)[-100:]):
         plt.scatter(point[0], point[-1])
         plt.annotate(i, (point[0], point[-1]), color='black')
 

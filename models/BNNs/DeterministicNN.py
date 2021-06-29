@@ -17,9 +17,11 @@ class Deterministic_NN(nn.Module):
         self.prior_alpha = alpha
         self.likelihood_beta = beta
 
+        self.activation = nn.Tanh()
+
     def forward(self, x):
-        x = F.relu(self.input_layer(x.view(-1, 1)))
-        x = F.relu(self.hidden_layer(x))
+        x = self.activation(self.input_layer(x.view(-1, 1)))
+        x = self.activation(self.hidden_layer(x))
         x = self.final_layer(x)
         return x
 
@@ -42,26 +44,8 @@ class Deterministic_NN(nn.Module):
                                           covariance_matrix=(1. / self.prior_alpha) * torch.eye(weights.shape[0]))
 
         weight_sample = prior_dist.sample()
-        current_idx = 0
-        input_layer_shape = self.input_layer.weight.shape
-        input_layer_len = input_layer_shape[1]
-        input_layer_sample_weights = weight_sample[current_idx: current_idx + input_layer_len]
-        current_idx = current_idx + input_layer_len
-        input_layer_sample_bias = weight_sample[current_idx: current_idx + input_layer_len]
-        current_idx = current_idx + input_layer_len
-        hidden_layer_shape = self.hidden_layer.weight.shape
-        hidden_layer_len = hidden_layer_shape[0] * hidden_layer_shape[1]
-        hidden_layer_sample_weights = weight_sample[current_idx: current_idx + hidden_layer_len]
-        current_idx = current_idx + hidden_layer_len
-        hidden_layer_sample_bias = weight_sample[current_idx: current_idx + hidden_layer_shape[1]]
-        current_idx = current_idx + hidden_layer_shape[1]
-        final_layer_shape = self.final_layer.weight.shape
-        final_layer_len = final_layer_shape[0]
-        final_layer_sample_weights = weight_sample[current_idx: current_idx + final_layer_len]
-        current_idx = current_idx + final_layer_len
-        final_layer_sample_bias = weight_sample[current_idx]
 
-        return weight_sample, input_layer_sample_weights, input_layer_sample_bias, final_layer_sample_weights, final_layer_sample_bias
+        return weight_sample
 
     def make_weights_from_sample(self, weight_sample):
         current_idx = 0
