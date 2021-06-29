@@ -3,7 +3,7 @@ import torch
 import torch.distributions as dist
 import torch.nn as nn
 from tqdm import tqdm
-from models.BayesianLinRegressor import BayesLinRegressor
+from models.SimpleBayesianLinRegressor import BayesLinRegressor
 from rec.OptimisingVars.GMMPosteriorDist import GMMPosteriorDist
 from rec.OptimisingVars.PriorDist import PriorDist
 from rec.utils import kl_estimate_with_mc

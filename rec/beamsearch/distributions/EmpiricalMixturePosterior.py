@@ -21,21 +21,24 @@ class EmpiricalMixturePosterior:
         :param z: Specific empirical sample
         :return: Gaussian distribution
         """
-        if k == 0:
-            b_k = torch.sum(aux_history[:k], dim=0)
-        else:
-            b_k = torch.sum(aux_history[:, :k], dim=1)
-
         s_k_minus_one = torch.sum(self.coding_sampler.auxiliary_vars[k:])
         s_k = torch.sum(self.coding_sampler.auxiliary_vars[k+1:])
 
         mean_scalar = self.coding_sampler.auxiliary_vars[k] / s_k_minus_one
         variance_scalar = self.coding_sampler.auxiliary_vars[k] * s_k / s_k_minus_one
 
-        mean = (z - b_k) * mean_scalar
-        covariance = torch.eye(self.problem_dimension) * variance_scalar
+        means = torch.zeros((aux_history.shape[0], self.n_samples_from_target, self.problem_dimension))
+        if k == 0:
+            b_k = torch.sum(aux_history[:k], dim=0)
+            means = (z - b_k) * mean_scalar
+        else:
+            b_k = torch.sum(aux_history[:, :k], dim=1)
+            for i, z_d in enumerate(z):
+                means[:, i] = (z_d - b_k) * mean_scalar
 
-        return mean, covariance
+        covariances = torch.eye(self.problem_dimension) * variance_scalar
+
+        return means, covariances
 
     def q_z_given_aks_mixing_weights(self, k, previous_conditional_joints, log_prob=False):
         """
@@ -61,12 +64,8 @@ class EmpiricalMixturePosterior:
         mixing_weights = self.q_z_given_aks_mixing_weights(k, previous_conditional_coding_joints, log_prob)
 
         if k == 0:
-            component_means = torch.zeros((self.n_samples_from_target, self.problem_dimension))
-            component_variances = torch.zeros(
-                (self.n_samples_from_target, self.problem_dimension, self.problem_dimension))
 
-            for i, z_d in enumerate(self.empirical_samples):
-                component_means[i], component_variances[i] = self.p_ak_given_history_and_z(k, aux_history, z_d)
+            component_means, component_variances = self.p_ak_given_history_and_z(k, aux_history, self.empirical_samples)
 
             # make categorical from mixing weights
             mixing_categorical = dist.categorical.Categorical(probs=mixing_weights)
@@ -81,15 +80,7 @@ class EmpiricalMixturePosterior:
 
         else:
 
-            # compute components p(ak | a_{1:k}, z_d)
-            # shape for mean is (batch_size, n_samples_from_target, problem_dim)
-            # shape for covariances is (batch_size, n_samples_from_target, problem_dim, problem_dim)
-            component_means = torch.zeros((aux_history.shape[0], self.n_samples_from_target, self.problem_dimension))
-            component_variances = torch.zeros((aux_history.shape[0], self.n_samples_from_target, self.problem_dimension, self.problem_dimension))
-
-            # TODO instead of loop, can try flattening and then reshaping
-            for i, z_d in enumerate(self.empirical_samples):
-                component_means[:, i], component_variances[:, i] = self.p_ak_given_history_and_z(k, aux_history, z_d)
+            component_means, component_variances = self.p_ak_given_history_and_z(k, aux_history, self.empirical_samples)
 
             # make categorical from mixing weights
             mixing_categorical = dist.categorical.Categorical(probs=mixing_weights)

@@ -5,9 +5,9 @@ import torch
 import torch.distributions as dist
 from tqdm import tqdm
 
-from models.BayesianLinRegressor import BayesLinRegressor
+from models.SimpleBayesianLinRegressor import BayesLinRegressor
 from rec.distributions.CodingSampler import CodingSampler
-from rec.distributions.EmpiricalMixturePosterior_Parallel import EmpiricalMixturePosterior
+from rec.distributions.EmpiricalMixturePosterior import EmpiricalMixturePosterior
 from rec.utils import kl_estimate_with_mc, plot_running_sum, plot_2d_distribution
 
 

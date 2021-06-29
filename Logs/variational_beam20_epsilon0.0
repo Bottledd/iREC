@@ -1,0 +1,8 @@
+The MSE is: 1.0126152500784362
+The MAE is: 0.8046284163053629
+The Mahalanobis distance is: 0.0010377486633932835
+The MSE of the mean is: 1.001589954474435
+The MAE of the mean is: 0.7998575181240097
+The % drop-off to MAP MSE is: 1.1007793713133263
+The % drop-off to MAP MAE is: 0.5964685051086115
+log q(z)/p(z) is: 48.94008845033144

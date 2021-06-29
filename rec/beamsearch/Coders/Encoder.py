@@ -5,13 +5,13 @@ import torch
 import torch.distributions as dist
 from tqdm import tqdm
 
-from models.BayesianLinRegressor import BayesLinRegressor
+from models.SimpleBayesianLinRegressor import BayesLinRegressor
 from rec.beamsearch.distributions.CodingSampler import CodingSampler
 from rec.beamsearch.distributions.EmpiricalMixturePosterior import EmpiricalMixturePosterior
 from rec.beamsearch.samplers.GreedySampling import GreedySampler
 from rec.beamsearch.utils import convert_flattened_indices
-from rec.utils import kl_estimate_with_mc, plot_running_sum, plot_2d_distribution
-
+from rec.utils import kl_estimate_with_mc, plot_running_sum_1d, plot_running_sum_2d, plot_2d_distribution, plot_1d_distribution, plot_samples_in_2d, plot_pairs_of_samples
+from rec.OptimisingVars.FinalJointOptimiser import FinalJointOptimiser
 
 class Encoder:
     def __init__(self,
@@ -23,7 +23,7 @@ class Encoder:
                  omega,
                  n_samples_from_target,
                  beamwidth,
-                 epsilon=0,
+                 epsilon=0.,
                  ):
         # instantiate the beamwidth
         self.beamwidth = beamwidth
@@ -43,6 +43,8 @@ class Encoder:
             # need to do MC estimate
             kl_q_p = kl_estimate_with_mc(target, coding_z_prior)
 
+        self.total_kl = kl_q_p
+
         # compute parameters for auxiliary method
         self.target = target
         self.n_auxiliary = math.ceil(kl_q_p / omega)
@@ -60,7 +62,7 @@ class Encoder:
 
         # auxiliary samples that are selected
         # keep track of samples themselves and indices separately so we can check to ensure they agree
-        self.selected_samples = torch.zeros((self.beamwidth, self.n_auxiliary, self.problem_dimension))
+        self.selected_samples = torch.ones((self.beamwidth, self.n_auxiliary, self.problem_dimension)) * float('nan')
         self.selected_samples_indices = torch.zeros((self.beamwidth, self.n_auxiliary,))
 
         # need to keep track of joint probabilities
@@ -68,7 +70,7 @@ class Encoder:
         self.selected_samples_joint_posterior_log_prob = torch.zeros((self.beamwidth,))
 
         # need to keep track of mixing weights
-        self.selected_samples_mixing_weights = torch.zeros((self.beamwidth, n_samples_from_target,))
+        self.selected_samples_mixing_weights = torch.ones((self.beamwidth, n_samples_from_target,)) * float('nan')
 
         # store selection sampler object
         self.selection_sampler = selection_sampler
@@ -129,14 +131,15 @@ class Encoder:
                 self.selected_samples_mixing_weights[:n_samples_to_add] = new_mixing_weights
 
     def run_encoder(self):
-        for i in tqdm(range(self.n_auxiliary)):
+        #for i in tqdm(range(self.n_auxiliary)):
+        for i in range(self.n_auxiliary):
             # set the seed
-            seed = i
+            seed = i + self.initial_seed
             # create new auxiliary prior distribution, p(a_k)
             auxiliary_prior = self.auxiliary_posterior.coding_sampler.auxiliary_coding_dist(i)
 
             # need to do something different for first auxiliary variable
-            if i == 0:
+            if i == 0 and self.n_auxiliary > 1:
                 # if beamwidth > n_samples_per_aux select at most n_samples_per_aux on first round
                 if self.beamwidth > self.n_samples_per_aux:
                     n_selections = self.n_samples_per_aux
@@ -147,8 +150,7 @@ class Encoder:
                 # note since all starting values are zero we can select the 0th index for many
                 auxiliary_conditional_posterior = self.auxiliary_posterior.q_ak_given_history(self.selected_samples[0],
                                                                                               i,
-                                                                                              self.selected_samples_mixing_weights[
-                                                                                                  0],
+                                                                                              torch.zeros_like(self.selected_samples_mixing_weights[0]),
                                                                                               log_prob=True)
 
                 # create new selection sampler object
@@ -169,12 +171,6 @@ class Encoder:
 
                 indices, samples = selection_sampler.choose_samples_to_transmit(samples=trial_aks)
 
-                # do kl estimate on q(a_k | a_{1:k-1})
-                kl_estimate = kl_estimate_with_mc(target=auxiliary_conditional_posterior, coder=auxiliary_prior,
-                                                  num_samples=10000)
-                self.aux_var_kl[i] = kl_estimate
-                print(f"KL of aux {i} is {kl_estimate}")
-
                 # update stored samples, indices and log probs
 
                 self.update_stored_samples(i, samples=samples, sample_indices=indices, coding_dist=auxiliary_prior,
@@ -182,8 +178,8 @@ class Encoder:
 
             elif self.n_auxiliary - 1 > i > 0:
                 # first need to ignore any unfilled beams from previous run, i.e. mask 0 values
-                mask = self.selected_samples[:, i - 1].ne(0)
-                mixing_weights_mask = self.selected_samples_mixing_weights.ne(0)
+                mask = self.selected_samples[:, i - 1].ne(float('nan'))
+                mixing_weights_mask = self.selected_samples_mixing_weights.ne(float('nan'))
                 expanded_mask = torch.repeat_interleave(mask[:, None, :], self.n_auxiliary, dim=1)
                 single_dim_mask = mask[:, 0]
                 pruned_beams = torch.masked_select(self.selected_samples, expanded_mask).reshape(-1, self.n_auxiliary,
@@ -202,12 +198,11 @@ class Encoder:
                                                                                               i,
                                                                                               tiled_mixing_weights,
                                                                                               log_prob=True)
-
                 # need to see if masked B_hat * M > B
                 if self.beamwidth > tiled_beams.shape[0]:
                     n_new_beams = tiled_beams.shape[0]
                 else:
-                    n_new_beams = beamwidth
+                    n_new_beams = self.beamwidth
                 # create new selection sampler object
                 selection_sampler = self.selection_sampler(coding=auxiliary_prior,
                                                            target=auxiliary_conditional_posterior,
@@ -225,12 +220,6 @@ class Encoder:
 
                 indices, samples = selection_sampler.choose_samples_to_transmit(samples=repeated_aks,
                                                                                 n_samples_per_aux=self.n_samples_per_aux)
-
-                # do kl estimate on q(a_k | a_{1:k-1})
-                kl_estimate = kl_estimate_with_mc(target=auxiliary_conditional_posterior, coder=auxiliary_prior,
-                                                  num_samples=1000)
-                self.aux_var_kl[i] = torch.mean(kl_estimate)
-                print(f"KL of aux {i} is {self.aux_var_kl[i]}")
 
                 # now need to convert indices from flattened to refer to specific beam/ak sample
                 beam_indices, sample_indices = convert_flattened_indices(indices, beamwidth=pruned_beams.shape[0])
@@ -259,7 +248,7 @@ class Encoder:
                 trial_aks = selection_sampler.get_samples_from_coder()
                 repeated_aks = torch.repeat_interleave(trial_aks, self.beamwidth, dim=0)
                 indices, samples = selection_sampler.choose_samples_to_transmit(samples=repeated_aks,
-                                                                                previous_samples=self.selected_samples, )
+                                                                                previous_samples=self.selected_samples[:, :i], )
 
                 # now need to convert indices from flattened to refer to specific beam/ak sample
                 beam_indices, sample_indices = convert_flattened_indices(indices, beamwidth=self.beamwidth)
@@ -273,26 +262,27 @@ class Encoder:
 
 if __name__ == '__main__':
     torch.set_default_tensor_type(torch.DoubleTensor)
-    initial_seed = 100
-    blr = BayesLinRegressor(prior_mean=torch.tensor([0.0, 0.0]),
-                            prior_alpha=0.001,
-                            signal_std=1,
-                            num_targets=10,
-                            seed=initial_seed)
+    blr = BayesLinRegressor(prior_mean=torch.zeros(5),
+                            prior_alpha=1,
+                            signal_std=1e-2,
+                            num_targets=100,
+                            seed=1)
     blr.sample_feature_inputs()
     blr.sample_regression_targets()
     blr.posterior_update()
     target = blr.weight_posterior
-
-
+    plt.imshow(target.covariance_matrix)
+    plt.show()
 
     coding_sampler = CodingSampler
     auxiliary_posterior = EmpiricalMixturePosterior
     selection_sampler = GreedySampler
-    omega = 8
-    n_samples_from_target = 1
-    beamwidth = 1
+    n_samples_from_target = 50
+    omega = 5
+    initial_seed = 100
 
+    beamwidth = 20
+    epsilon = 0.
     encoder = Encoder(target,
                       initial_seed,
                       coding_sampler,
@@ -300,14 +290,56 @@ if __name__ == '__main__':
                       auxiliary_posterior,
                       omega,
                       n_samples_from_target,
-                      epsilon=0.,
+                      epsilon=epsilon,
                       beamwidth=beamwidth)
 
+    z_sample = target.mean
+    n_auxiliaries = encoder.n_auxiliary
+    kl_q_p = encoder.total_kl
+
+    option = -1
+
+    if option == 1:
+        encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = torch.tensor(
+            [0.3094, 0.2134, 0.1457, 0.1002, 0.0698, 0.0491, 0.0351, 0.0255, 0.0194,
+             0.0156, 0.0085, 0.0040, 0.0025, 0.0019])
+
+    elif option == 2:
+        print(f"First Optimise Prior Variances!")
+        optimising = FinalJointOptimiser(z_sample, omega, n_auxiliaries, kl_q_p, n_trajectories=50, total_var=1)
+        encoder.auxiliary_posterior.coding_sampler.auxiliary_vars = optimising.run_optimiser(
+            epochs=5000 // n_auxiliaries)
+    else:
+        pass
 
     z, indices = encoder.run_encoder()
-
-    best_sample = torch.argmax(target.log_prob(z))
-    print(target.log_prob(z[best_sample]))
-    plot_2d_distribution(target)
-    plot_running_sum(encoder.selected_samples[best_sample], plot_index_labels=False)
+    best_sample_idx = torch.argmax(target.log_prob(z))
+    best_sample = z[best_sample_idx]
+    plot_pairs_of_samples(target, encoder.selected_samples[best_sample_idx], empirical_samples=encoder.auxiliary_posterior.empirical_samples)
     plt.show()
+
+    # import sys
+    # parent_root = "../../../"
+    # sys.stdout = open(parent_root + f"Logs/empirical_beam{beamwidth}_epsilon{epsilon}", 'w')
+    #
+    # print(f"The MSE is: {blr.measure_performance(best_sample, kind='MSE')}\n"
+    #       f"The MAE is: {blr.measure_performance(best_sample, kind='MAE')}\n"
+    #       f"The Mahalanobis distance is: {mahalanobis_dist}\n"
+    #       f"The MSE of the mean is: {blr.measure_performance(target.mean, kind='MSE')}\n"
+    #       f"The MAE of the mean is: {blr.measure_performance(target.mean, kind='MAE')}\n"
+    #       f"The % drop-off to MAP MSE is: {(blr.measure_performance(best_sample, kind='MSE') - blr.measure_performance(target.mean, kind='MSE')) / blr.measure_performance(target.mean, kind='MSE') * 100}\n"
+    #       f"The % drop-off to MAP MAE is: {(blr.measure_performance(best_sample, kind='MAE') - blr.measure_performance(target.mean, kind='MAE')) / blr.measure_performance(target.mean, kind='MAE') * 100}\n"
+    #       f"log q(z)/p(z) is: {target.log_prob(best_sample) - encoder.auxiliary_posterior.coding_sampler.log_prob(best_sample)}")
+    # plot_samples_in_2d(target=target)
+    # plot_samples_in_2d(empirical_samples=encoder.auxiliary_posterior.empirical_samples)
+    # plot_samples_in_2d(coded_sample=best_sample)
+    # plot_2d_distribution(target)
+    # plot_running_sum_2d(encoder.selected_samples[best_sample_idx], plot_index_labels=True)
+    # # plt.plot(encoder.auxiliary_posterior.empirical_samples[:, 0], encoder.auxiliary_posterior.empirical_samples[:, 1],
+    # #          'x')
+    # plt.plot(best_sample[0], best_sample[1], 'o')
+    # #plt.savefig(f"../../../Figures/Presentation/empirical_beam{beamwidth}_epsilon{epsilon}.png", bbox_inches='tight')
+    # plt.show()
+    # blr.plot_regression_with_uncertainty(plot_samples=True)
+    # blr.plot_sampled_regressor(z[0])
+    # # sys.stdout.close()

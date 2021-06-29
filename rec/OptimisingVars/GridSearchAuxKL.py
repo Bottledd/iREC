@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 import torch
 from tqdm import tqdm
-from models.BayesianLinRegressor import BayesLinRegressor
-from rec.Coders.Encoder import Encoder
+from models.SimpleBayesianLinRegressor import BayesLinRegressor
+from rec.Coders.Encoder_Old import Encoder
 from rec.distributions.CodingSampler import CodingSampler
-from rec.distributions.EmpiricalMixturePosterior import EmpiricalMixturePosterior
+from rec.distributions.EmpiricalMixturePosterior_Old import EmpiricalMixturePosterior
 from rec.samplers.GreedySampling import GreedySampler
 from rec.utils import plot_running_sum, plot_2d_distribution
 

@@ -4,12 +4,12 @@ import torch.distributions as dist
 import torch.nn as nn
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from models.BayesianLinRegressor import BayesLinRegressor
+from models.SimpleBayesianLinRegressor import BayesLinRegressor
 from rec.utils import kl_estimate_with_mc, plot_2d_distribution
 import numpy as np
 
 class JointOptimisation(nn.Module):
-    def __init__(self, n_auxiliaries, n_trajectories, dim, target, omega):
+    def __init__(self, n_auxiliaries, n_trajectories, dim, target, omega, total_kl):
         super(JointOptimisation, self).__init__()
         self.n_auxiliaries = n_auxiliaries
         self.n_trajectories = n_trajectories
@@ -22,8 +22,9 @@ class JointOptimisation(nn.Module):
         self.register_buffer("z_sample", target.mean)
         self.register_buffer('total_var', torch.ones((1,)))
         self.pre_softmax_aux_vars = nn.Parameter(dist.normal.Normal(loc=0., scale=1).sample((n_auxiliaries,)))
-        #self.pre_softmax_aux_vars = nn.Parameter(torch.ones(n_auxiliaries))
+        self.pre_softmax_aux_vars = nn.Parameter(torch.ones(n_auxiliaries))
         self.kl_history = []
+        self.remaining_kl = total_kl
 
     def get_aux_post_params(self, index):
         sigma_ks = nn.functional.softmax(self.pre_softmax_aux_vars, dim=0)
@@ -52,15 +53,9 @@ class JointOptimisation(nn.Module):
         # kl = kl_estimate_with_mc(self.aux_posterior, self.aux_prior, rsample=True, num_samples=100)
         if index < self.n_auxiliaries - 1:
             kl = dist.kl_divergence(self.aux_posterior(index), self.aux_prior(index))
-            loss = 0.5 * (kl - self.omega) ** 2
-            # loss = torch.norm(kl - self.omega, p=np.inf)
-        else:
-            final_var_prior = self.aux_prior(index=self.n_auxiliaries - 1)
-            samples = final_var_prior.rsample((self.n_trajectories,))
-            z = torch.sum(self.trajectories, dim=1) + samples
-            log_probs = target.log_prob(z)
-            loss = -log_probs
-        return loss
+            kl_loss = 0.5 * (kl - self.omega) ** 2
+
+        return kl_loss, kl
 
     # def final_aux_loss(self):
     #     final_var_prior = self.aux_prior(index=self.n_auxiliaries-1)
@@ -79,7 +74,9 @@ class JointOptimisation(nn.Module):
             optimiser.zero_grad()
             for k in range(self.n_auxiliaries-1):
                 # compute loss for a_k
-                losses[:, k] = self.loss_function(index=k)
+                current_loss, aux_kl = self.loss_function(index=k)
+                losses[:, k] = current_loss
+
 
                 # sample trajectory
                 if k < self.n_trajectories - 1:
@@ -139,7 +136,7 @@ if __name__ == '__main__':
     n_auxiliaries = math.ceil(kl_q_p / omega)
     print(f"Num of Aux is: {n_auxiliaries}")
 
-    optimising = JointOptimisation(n_auxiliaries, n_trajectories, dim, target, omega)
+    optimising = JointOptimisation(n_auxiliaries, n_trajectories, dim, target, omega, kl_q_p)
     best_vars = optimising.run_optimiser()
     plt.plot(best_vars, 'o')
     plt.show()

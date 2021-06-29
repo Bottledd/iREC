@@ -4,7 +4,7 @@ import torch.distributions as dist
 import torch.nn as nn
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from models.BayesianLinRegressor import BayesLinRegressor
+from models.SimpleBayesianLinRegressor import BayesLinRegressor
 from rec.utils import kl_estimate_with_mc, plot_2d_distribution
 
 
@@ -81,10 +81,10 @@ class OneSampleOptimise(nn.Module):
             self.already_optimised_aux_vars[self.optimise_index] = trained_sigma
             self.already_optimised_ratios[self.optimise_index] = trained_ratio
             self.trajectories[:, self.optimise_index] = self.aux_posterior.sample((self.n_trajectories,))[:, 0].detach()
-            # with torch.no_grad():
-            #     remaining_var = self.total_var - torch.sum(self.already_optimised_aux_vars)
-            #     uniform_remaining_var = remaining_var / (self.n_auxiliaries - (self.optimise_index + 1))
-            #     self.ratio_k.copy_(uniform_remaining_var * torch.ones((1,)))
+            with torch.no_grad():
+                remaining_var = self.total_var - torch.sum(self.already_optimised_aux_vars)
+                uniform_remaining_var = remaining_var / (self.n_auxiliaries - (self.optimise_index + 1))
+                self.ratio_k.copy_(uniform_remaining_var * torch.ones((1,)))
         return self.already_optimised_aux_vars
 
     def compute_run_of_kls(self):
