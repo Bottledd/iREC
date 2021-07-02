@@ -43,19 +43,20 @@ class BayesianNeuralNetwork(PyroModule):
 if __name__ == '__main__':
     # create toy dataset
     torch.manual_seed(20)
-    x = torch.cat([torch.Tensor(50).uniform_(-5, -3).sort()[0].reshape(-1, 1),
-                   torch.Tensor(50).uniform_(3, 5).sort()[0].reshape(-1, 1)])
-    i = 50
+    x = torch.cat([torch.Tensor(75).uniform_(-5, -2).sort()[0].reshape(-1, 1),
+                   torch.Tensor(50).uniform_(2, 5).sort()[0].reshape(-1, 1)])
+    i = 30
     x_data = torch.cat([x[0:i - 15], x[i + 14:]])
 
     # generate some data
-    alpha, beta = 1., 10.
+    alpha, beta, num_nodes = .5, 25., 5
 
     # generate some data
-    data_generator_model = Deterministic_NN(alpha=alpha, beta=beta, num_nodes=5)
+    data_generator_model = Deterministic_NN(alpha=alpha, beta=beta, num_nodes=num_nodes)
     sampled_weights = data_generator_model.sample_weights_from_prior()
     data_generator_model.make_weights_from_sample(sampled_weights)
-    y_data = data_generator_model(x_data).detach() + (1 / data_generator_model.likelihood_beta ** 0.5) * torch.randn_like(
+    y_data = data_generator_model(x_data).detach() + (
+            1 / data_generator_model.likelihood_beta ** 0.5) * torch.randn_like(
         data_generator_model(x_data).detach())
 
     # create models
@@ -67,18 +68,18 @@ if __name__ == '__main__':
     adam = pyro.optim.Adam({"lr": 0.05})
     svi = SVI(model, guide, adam, loss=Trace_ELBO())
 
-    num_iterations = 2000
+    num_iterations = 3000
     pyro.clear_param_store()
     for j in range(num_iterations):
         # calculate the loss and take a gradient step
         loss = svi.step(x_data, y_data)
-        if j % 100 == 0:
+        if j % 1000 == 0:
             print("[iteration %04d] loss: %.4f" % (j + 1, loss / len(x_data)))
 
     guide.requires_grad_(False)
 
-    for name, value in pyro.get_param_store().items():
-        print(name, pyro.param(name))
+    # for name, value in pyro.get_param_store().items():
+    #     print(name, pyro.param(name))
 
     from pyro.infer import Predictive
 
@@ -129,30 +130,30 @@ if __name__ == '__main__':
     fig.tight_layout()
     fig.show()
 
-    # HMC EXPERIMENTS
-    from pyro.infer import MCMC, NUTS, HMC
-
-    nuts_kernel = NUTS(model)
-    mcmc = MCMC(nuts_kernel, num_samples=2000, warmup_steps=1000, num_chains=1)
-    mcmc.run(x_data, y_data)
-    posterior_samples = mcmc.get_samples()
-
-    pred = Predictive(model, posterior_samples)(xs, None)
-    sum = summary(pred)
-    hmc_y = sum["obs"]
-
-    hmc_predictions = pd.DataFrame({
-        "inputs": xs,
-        "y_mean": hmc_y["mean"],
-        "y_perc_5": hmc_y["5%"],
-        "y_perc_95": hmc_y["95%"],
-        "true": ys,
-    })
-    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(12, 6), sharey=True)
-    ax.scatter(x_data, y_data)
-    ax.plot(hmc_predictions['inputs'], hmc_predictions['true'], 'k-', label='Targets wo/ noise')
-    ax.plot(hmc_predictions['inputs'], hmc_predictions['y_mean'], label='Mean Prediction')
-    ax.fill_between(hmc_predictions['inputs'], hmc_predictions['y_perc_5'], hmc_predictions['y_perc_95'], alpha=0.5)
-    ax.set(xlabel=r'$x$', ylabel=r'$y$', title='HMC Inference')
-    fig.tight_layout()
-    fig.show()
+    # # HMC EXPERIMENTS
+    # from pyro.infer import MCMC, NUTS, HMC
+    #
+    # nuts_kernel = HMC(model)
+    # mcmc = MCMC(nuts_kernel, num_samples=2000, warmup_steps=1000, num_chains=1)
+    # mcmc.run(x_data, y_data)
+    # posterior_samples = mcmc.get_samples()
+    #
+    # pred = Predictive(model, posterior_samples)(xs, None)
+    # sum = summary(pred)
+    # hmc_y = sum["obs"]
+    #
+    # hmc_predictions = pd.DataFrame({
+    #     "inputs": xs,
+    #     "y_mean": hmc_y["mean"],
+    #     "y_perc_5": hmc_y["5%"],
+    #     "y_perc_95": hmc_y["95%"],
+    #     "true": ys,
+    # })
+    # fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(12, 6), sharey=True)
+    # ax.scatter(x_data, y_data)
+    # ax.plot(hmc_predictions['inputs'], hmc_predictions['true'], 'k-', label='Targets wo/ noise')
+    # ax.plot(hmc_predictions['inputs'], hmc_predictions['y_mean'], label='Mean Prediction')
+    # ax.fill_between(hmc_predictions['inputs'], hmc_predictions['y_perc_5'], hmc_predictions['y_perc_95'], alpha=0.5)
+    # ax.set(xlabel=r'$x$', ylabel=r'$y$', title='HMC Inference')
+    # fig.tight_layout()
+    # fig.show()

@@ -8,6 +8,7 @@ from models.SimpleBayesianLinRegressor import BayesLinRegressor
 from rec.utils import kl_estimate_with_mc, plot_2d_distribution
 import numpy as np
 
+
 class FinalJointOptimiser(nn.Module):
     def __init__(self, z_sample, omega, n_auxiliaries, total_kl, n_trajectories=1000, total_var=1):
         super(FinalJointOptimiser, self).__init__()
@@ -23,7 +24,7 @@ class FinalJointOptimiser(nn.Module):
         self.total_kl = float(total_kl)
 
     def get_aux_post_params(self, index):
-        sigma_ks = nn.functional.softmax(self.pre_softmax_aux_vars, dim=0)
+        sigma_ks = nn.functional.softmax(self.pre_softmax_aux_vars, dim=0) * self.total_var
         sigma_k = sigma_ks[index]
         s_k_minus_1 = self.total_var - torch.sum(sigma_ks[:index])
         s_k = s_k_minus_1 - sigma_k
@@ -34,7 +35,7 @@ class FinalJointOptimiser(nn.Module):
         return unscaled_mean, mean_scalar, variance_scalar
 
     def aux_prior(self, index):
-        sigma_k = nn.functional.softmax(self.pre_softmax_aux_vars, dim=0)[index]
+        sigma_k = nn.functional.softmax(self.pre_softmax_aux_vars, dim=0)[index] * self.total_var
         mean = torch.zeros((self.dim,)).to(self.pre_softmax_aux_vars.device)
         covariance = sigma_k * torch.eye(self.dim).to(self.pre_softmax_aux_vars.device)
         return dist.multivariate_normal.MultivariateNormal(loc=mean, covariance_matrix=covariance)
@@ -95,43 +96,52 @@ class FinalJointOptimiser(nn.Module):
 
 
 if __name__ == '__main__':
-    initial_seed_target = 0
-    blr = BayesLinRegressor(prior_mean=torch.zeros(20),
-                            prior_alpha=1,
-                            signal_std=1,
-                            num_targets=10000,
-                            seed=initial_seed_target)
-    blr.sample_feature_inputs()
-    blr.sample_regression_targets()
-    blr.posterior_update()
-
-    target = blr.weight_posterior
-    z_sample = target.mean
-
-    dim = z_sample.shape[0]
-    prior_var = 1.
+    # initial_seed_target = 0
+    # blr = BayesLinRegressor(prior_mean=torch.zeros(33),
+    #                         prior_alpha=1,
+    #                         signal_std=1,
+    #                         num_targets=10000,
+    #                         seed=initial_seed_target)
+    # blr.sample_feature_inputs()
+    # blr.sample_regression_targets()
+    # blr.posterior_update()
+    #
+    # target = blr.weight_posterior
+    # z_sample = target.mean
+    #
+    # dim = z_sample.shape[0]
+    # prior_var = 1.
+    # omega = 5
+    # n_trajectories = 64
+    #
+    # # first try to compute KL between q(z) and p(z) with torch.distributions
+    # try:
+    #     kl_q_p = dist.kl_divergence(target, dist.MultivariateNormal(loc=torch.zeros((dim,)),
+    #                                                                 covariance_matrix=prior_var * torch.eye(
+    #                                                                     dim)))
+    # except:
+    #     kl_q_p = kl_estimate_with_mc(target=target, coder=dist.MultivariateNormal(loc=torch.zeros((dim,)),
+    #                                                                               covariance_matrix=prior_var * torch.eye(
+    #                                                                                   dim)))
+    #
+    # n_auxiliaries = math.ceil(kl_q_p / omega)
+    # print(f"Num of Aux is: {n_auxiliaries}")
+    z_sample = torch.tensor([-0.8013,  0.4826, -0.8543,  0.4023,  0.6251, -0.0990,  0.5317,  0.1256,
+         0.5021,  0.2545, -0.5152,  0.3910,  0.0915,  0.1261,  0.8930, -0.3048,
+         0.8528, -0.2112,  0.0639,  0.7643,  0.3616, -0.3468,  0.9332,  0.2389,
+         0.9711, -0.4712, -0.8882,  0.0723,  0.8000, -0.9845, -0.9323, -0.2634,
+         0.8735])
     omega = 5
     n_trajectories = 64
-
-    # first try to compute KL between q(z) and p(z) with torch.distributions
-    try:
-        kl_q_p = dist.kl_divergence(target, dist.MultivariateNormal(loc=torch.zeros((dim,)),
-                                                                    covariance_matrix=prior_var * torch.eye(
-                                                                        dim)))
-    except:
-        kl_q_p = kl_estimate_with_mc(target=target, coder=dist.MultivariateNormal(loc=torch.zeros((dim,)),
-                                                                                  covariance_matrix=prior_var * torch.eye(
-                                                                                      dim)))
-
-    n_auxiliaries = math.ceil(kl_q_p / omega)
-    print(f"Num of Aux is: {n_auxiliaries}")
-
+    n_auxiliaries = 14
+    kl_q_p = 70
+    prior_var = 1
     optimising = FinalJointOptimiser(z_sample, omega, n_auxiliaries, kl_q_p, n_trajectories, prior_var)
     best_vars = optimising.run_optimiser()
-    fig, axes = plt.subplots(1, 2, figsize=(9, 5))
-
-    axes[0].plot(best_vars)
-    axes[1].plot(best_vars / (1 - torch.cumsum(best_vars, dim=0)))
-
-    fig.tight_layout()
-    plt.show()
+    # fig, axes = plt.subplots(1, 2, figsize=(9, 5))
+    #
+    # axes[0].plot(best_vars)
+    # axes[1].plot(best_vars / (1 - torch.cumsum(best_vars, dim=0)))
+    #
+    # fig.tight_layout()
+    # plt.show()

@@ -67,12 +67,6 @@ class Deterministic_NN(nn.Module):
         current_idx = current_idx + final_layer_len
         final_layer_sample_bias = weight_sample[current_idx]
 
-        # check weights are the same
-        check = torch.zeros([0])
-        check = torch.cat([input_layer_sample_weights.flatten(), input_layer_sample_bias.flatten(),
-                           hidden_layer_sample_weights.flatten(), hidden_layer_sample_bias.flatten(),
-                           final_layer_sample_weights.flatten(), final_layer_sample_bias.flatten()])
-
         self.input_layer.weight = nn.Parameter(input_layer_sample_weights.reshape(input_layer_shape))
         self.input_layer.bias = nn.Parameter(input_layer_sample_bias)
         self.hidden_layer.weight = nn.Parameter(hidden_layer_sample_weights.reshape(hidden_layer_shape))

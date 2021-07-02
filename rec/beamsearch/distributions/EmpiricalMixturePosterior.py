@@ -4,13 +4,12 @@ import torch.distributions as dist
 
 class EmpiricalMixturePosterior:
     def __init__(self,
-                 target,
-                 n_samples_from_target,
+                 empirical_samples,
                  coding_sampler,
                  ):
 
-        self.empirical_samples = target.sample((n_samples_from_target,))
-        self.n_samples_from_target = n_samples_from_target
+        self.empirical_samples = empirical_samples
+        self.n_samples_from_target = empirical_samples.shape[0]
         self.coding_sampler = coding_sampler
         self.problem_dimension = self.empirical_samples.shape[-1]
 

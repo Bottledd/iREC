@@ -25,7 +25,7 @@ class VariationalOptimiser(nn.Module):
         self.total_kl = float(total_kl)
 
     def aux_posterior(self, current_z_mean, current_z_var, index):
-        sigma_ks = nn.functional.softmax(self.pre_softmax_aux_vars, dim=0)
+        sigma_ks = self.total_var * nn.functional.softmax(self.pre_softmax_aux_vars, dim=0)
         sigma_k = sigma_ks[index]
         s_k_minus_one = self.total_var - torch.sum(sigma_ks[:index])
         s_k = s_k_minus_one - sigma_k
@@ -40,7 +40,7 @@ class VariationalOptimiser(nn.Module):
         return dist.multivariate_normal.MultivariateNormal(loc=mean, covariance_matrix=covariance)
 
     def update_q_z_given_traj(self, current_z_mean, current_z_var, index):
-        sigma_ks = nn.functional.softmax(self.pre_softmax_aux_vars, dim=0)
+        sigma_ks = nn.functional.softmax(self.pre_softmax_aux_vars, dim=0) * self.total_var
         sigma_k = sigma_ks[index]
         s_k_minus_one = self.total_var - torch.sum(sigma_ks[:index])
         s_k = s_k_minus_one - sigma_k
@@ -56,7 +56,7 @@ class VariationalOptimiser(nn.Module):
         return mean, covariance
 
     def aux_prior(self, index):
-        sigma_k = nn.functional.softmax(self.pre_softmax_aux_vars, dim=0)[index]
+        sigma_k = self.total_var * nn.functional.softmax(self.pre_softmax_aux_vars, dim=0)[index]
         mean = torch.zeros((self.dim,)).to(self.pre_softmax_aux_vars.device)
         covariance = sigma_k * torch.eye(self.dim).to(self.pre_softmax_aux_vars.device)
         return dist.multivariate_normal.MultivariateNormal(loc=mean, covariance_matrix=covariance)

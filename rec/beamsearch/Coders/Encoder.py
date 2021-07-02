@@ -56,8 +56,8 @@ class Encoder:
                                                  n_auxiliary=self.n_auxiliary,
                                                  var=1)
 
-        self.auxiliary_posterior = auxiliary_posterior(target,
-                                                       n_samples_from_target,
+        self.empirical_samples = target.sample((n_samples_from_target,))
+        self.auxiliary_posterior = auxiliary_posterior(self.empirical_samples,
                                                        instance_coding_sampler)
 
         # auxiliary samples that are selected
@@ -262,7 +262,7 @@ class Encoder:
 
 if __name__ == '__main__':
     torch.set_default_tensor_type(torch.DoubleTensor)
-    blr = BayesLinRegressor(prior_mean=torch.zeros(5),
+    blr = BayesLinRegressor(prior_mean=torch.zeros(50),
                             prior_alpha=1,
                             signal_std=1e-2,
                             num_targets=100,
@@ -281,7 +281,7 @@ if __name__ == '__main__':
     omega = 5
     initial_seed = 100
 
-    beamwidth = 20
+    beamwidth = 1
     epsilon = 0.
     encoder = Encoder(target,
                       initial_seed,

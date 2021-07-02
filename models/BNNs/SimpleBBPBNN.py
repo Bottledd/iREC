@@ -22,8 +22,8 @@ class SimpleBBPBNN(nn.Module):
         self.hidden_layer = BBPLinear(num_nodes, num_nodes, self.priors)
         self.output_layer = BBPLinear(num_nodes, self.output_size, self.priors)
 
-        self.activation = nn.ReLU(inplace=True)
         self.likelihood_beta = beta
+        self.activation = torch.tanh
 
     def forward(self, x):
 
@@ -61,7 +61,7 @@ class SimpleBBPBNN(nn.Module):
         likelihood_dist = D.Normal(loc=y_preds, scale=(1. / self.likelihood_beta) ** 0.5)
         likelihood_term = -likelihood_dist.log_prob(y).sum()
 
-        return 10 * likelihood_term + kld
+        return likelihood_term + kld
 
     def get_mvn_params(self):
         means = torch.empty([0])
@@ -72,17 +72,19 @@ class SimpleBBPBNN(nn.Module):
         for mu in weight_params[::2]:
             means = torch.cat([means, mu.detach().flatten()])
 
-        for std in weight_params[1::2]:
-            stds = torch.cat([stds, F.softplus(std.detach(), beta=1.).flatten()])
+        for rho in weight_params[1::2]:
+            stds = torch.cat([stds, F.softplus(rho.detach(), beta=1.).flatten()])
 
         return means, stds
 
 
-def train_bnn(model, x, y, epochs=1000, num_bnn_samples_per_epoch=16):
-    opt = torch.optim.Adam(model.parameters(), lr=5e-2)
+def train_bnn(model, x, y, epochs=5000, num_bnn_samples_per_epoch=32):
+    opt = torch.optim.Adamax(model.parameters(), lr=0.5)
     pbar = trange(epochs)
+    #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=10, eta_min=0)
     for epoch in pbar:
         opt.zero_grad()
+        losses = []
         loss = 0
         for i in range(num_bnn_samples_per_epoch):
             y_preds, kld = model(x)
@@ -90,51 +92,49 @@ def train_bnn(model, x, y, epochs=1000, num_bnn_samples_per_epoch=16):
         loss = loss / num_bnn_samples_per_epoch
         loss.backward()
         pbar.set_description(f"The loss is : {loss.item()}")
+        losses.append(loss.item())
         opt.step()
-
+        #scheduler.step()
+    return losses
 
 if __name__ == '__main__':
-    # ----------------------------------------------------------------------------------------------------------------#
-    # ------------------------------------------------BBP EXPERIMENTS-------------------------------------------------#
-    # ----------------------------------------------------------------------------------------------------------------#
-    torch.set_default_tensor_type(torch.DoubleTensor)
     # create toy dataset
-    torch.manual_seed(10)
-    x = torch.Tensor(40).uniform_(-10, 10).sort()[0]
-    i = 20
-    x = torch.cat([x[0:i - 10], x[i + 9:]])
-
-    # standardise inputs
-    x_star = (x - x.mean()) / x.std()
-    # generate some data
-    alpha, beta = 1., 25.
+    torch.manual_seed(20)
+    x = torch.cat([torch.Tensor(75).uniform_(-5, -2).sort()[0].reshape(-1, 1),
+                   torch.Tensor(50).uniform_(2, 5).sort()[0].reshape(-1, 1)])
+    i = 30
+    x_data = torch.cat([x[0:i - 15], x[i + 14:]])
 
     # generate some data
-    data_generator_model = Deterministic_NN(alpha=alpha, beta=beta)
-    sampled_weights = data_generator_model.sample_weights_from_prior()[0]
+    alpha, beta, num_nodes = .5, 25., 5
+
+    # generate some data
+    data_generator_model = Deterministic_NN(alpha=alpha, beta=beta, num_nodes=num_nodes)
+    sampled_weights = data_generator_model.sample_weights_from_prior()
     data_generator_model.make_weights_from_sample(sampled_weights)
-    y = data_generator_model(x_star).detach() + (1 / data_generator_model.likelihood_beta ** 0.5) * torch.randn_like(
-        data_generator_model(x_star).detach())
+    y_data = data_generator_model(x_data).detach() + (
+            1 / data_generator_model.likelihood_beta ** 0.5) * torch.randn_like(
+        data_generator_model(x_data).detach())
 
     # plot data
     f, ax = plt.subplots(figsize=(8, 6))
-    ax.scatter(x, y, label='Targets w/ noise')
+    ax.scatter(x_data, y_data, label='Targets w/ noise')
     xs = torch.linspace(-10, 10, 100)
 
     # standardise new inputs
-    xs_star = (xs - x.mean()) / x.std()
-    ax.plot(xs, data_generator_model(xs_star).detach(), 'k-', label='Targets wo/ noise')
+    ax.plot(xs, data_generator_model(xs).detach(), 'k-', label='Targets wo/ noise')
     ax.legend()
     ax.set_aspect('equal', adjustable='box')
     f.tight_layout()
     f.show()
 
     # Model the Data
-    bnn = SimpleBBPBNN(alpha=alpha, beta=beta)
+    bnn = SimpleBBPBNN(alpha=alpha, beta=beta, num_nodes=num_nodes)
     bnn.train()
     # standardise outputs
-    y_star = (y - y.mean()) / y.std()
-    train_bnn(bnn, x_star, y_star)
+    loss = train_bnn(bnn, x_data, y_data, epochs=1000)
+    plt.plot(loss)
+    plt.show()
 
     # compute MVN used to communicate weights
     means, stds = bnn.get_mvn_params()
@@ -142,29 +142,25 @@ if __name__ == '__main__':
 
     # plot true samples
     num_compressed_samples = 1000
-    true_ensemble_preds = torch.zeros([num_compressed_samples, xs_star.shape[0], 1])
+    true_ensemble_preds = torch.zeros([num_compressed_samples, xs.shape[0], 1])
     ensemble_weights = variational_posterior.sample((num_compressed_samples,))
     for i, compressed_sample in enumerate(ensemble_weights):
-        ensemble_model = Deterministic_NN(alpha=alpha, beta=beta)
+        ensemble_model = Deterministic_NN(alpha=alpha, beta=beta, num_nodes=num_nodes)
         ensemble_model.make_weights_from_sample(compressed_sample)
-        true_ensemble_preds[i] = ensemble_model(xs_star).detach()
-
-    # unstardardise samples
-    true_ensemble_preds = (true_ensemble_preds * y.std()) + y.mean()
+        true_ensemble_preds[i] = ensemble_model(xs).detach()
 
     true_ensemble_preds_mean = true_ensemble_preds.mean(0).flatten()
     true_ensemble_preds_stds = true_ensemble_preds.std(0).flatten()
 
     # get uncertainty bounds
     f, ax = plt.subplots(figsize=(8, 6))
-    ax.scatter(x, y, label='Truth')
+    ax.scatter(x_data, y_data, label='Truth')
     ax.plot(xs, true_ensemble_preds_mean, 'r-', label='Predictive Mean')
-    ax.plot(xs, data_generator_model(xs_star).detach(), 'k-', label='Targets wo/ noise')
+    ax.plot(xs, data_generator_model(xs).detach(), 'k-', label='Targets wo/ noise')
     ax.fill_between(xs, true_ensemble_preds_mean - 1.96 * true_ensemble_preds_stds ** 0.5,
                     true_ensemble_preds_mean + 1.96 * true_ensemble_preds_stds ** 0.5,
                     color='gray', alpha=0.2, label='95% Error Bars')
     ax.legend()
-    ax.set_aspect('equal', adjustable='box')
     f.tight_layout()
     f.show()
 
@@ -203,7 +199,7 @@ if __name__ == '__main__':
     # # plot compressed samples
     # ensemble_preds = torch.zeros([num_compressed_samples, xs.shape[0], 1])
     # for i, compressed_sample in enumerate(compressed_weights):
-    #     compressed_model = Deterministic_NN(alpha=alpha, beta=beta)
+    #     compressed_model = Deterministic_NN(alpha=alpha, beta=beta, num_nodes=num_nodes)
     #     compressed_model.make_weights_from_sample(compressed_sample)
     #     ensemble_preds[i] = compressed_model(xs_star).detach()
     #
