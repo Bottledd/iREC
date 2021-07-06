@@ -9,10 +9,8 @@ def kl_estimate_with_mc(target, coder, num_samples=1000, dim=0, rsample=False):
         samples = target.sample((num_samples,))
 
     try:
-        print('test')
         target_log_prob = target.log_prob(samples)
     except:
-        print('test')
         target_log_prob = torch.zeros([0])
         for s in samples:
             target_log_prob = torch.cat(target_log_prob, target.log_prob(s))

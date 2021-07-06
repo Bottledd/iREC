@@ -10,7 +10,7 @@ from rec.beamsearch.distributions.CodingSampler import CodingSampler
 from rec.beamsearch.distributions.EmpiricalMixturePosterior import EmpiricalMixturePosterior
 from rec.beamsearch.samplers.GreedySampling import GreedySampler
 from rec.beamsearch.utils import convert_flattened_indices
-from rec.utils import kl_estimate_with_mc, plot_running_sum_1d, plot_running_sum_2d, plot_2d_distribution, plot_1d_distribution, plot_samples_in_2d, plot_pairs_of_samples
+from rec.utils import kl_estimate_with_mc, plot_running_sum_1d, plot_running_sum_2d, plot_2d_distribution, plot_1d_distribution, plot_samples_in_2d, plot_pairs_of_samples, compute_variational_posterior
 from rec.OptimisingVars.FinalJointOptimiser import FinalJointOptimiser
 
 class Encoder:
@@ -56,7 +56,9 @@ class Encoder:
                                                  n_auxiliary=self.n_auxiliary,
                                                  var=1)
 
+        torch.manual_seed(initial_seed)
         self.empirical_samples = target.sample((n_samples_from_target,))
+
         self.auxiliary_posterior = auxiliary_posterior(self.empirical_samples,
                                                        instance_coding_sampler)
 
@@ -131,8 +133,8 @@ class Encoder:
                 self.selected_samples_mixing_weights[:n_samples_to_add] = new_mixing_weights
 
     def run_encoder(self):
-        #for i in tqdm(range(self.n_auxiliary)):
-        for i in range(self.n_auxiliary):
+        for i in tqdm(range(self.n_auxiliary)):
+        #for i in range(self.n_auxiliary):
             # set the seed
             seed = i + self.initial_seed
             # create new auxiliary prior distribution, p(a_k)
@@ -152,6 +154,7 @@ class Encoder:
                                                                                               i,
                                                                                               torch.zeros_like(self.selected_samples_mixing_weights[0]),
                                                                                               log_prob=True)
+
 
                 # create new selection sampler object
                 selection_sampler = self.selection_sampler(coding=auxiliary_prior,
@@ -262,27 +265,39 @@ class Encoder:
 
 if __name__ == '__main__':
     torch.set_default_tensor_type(torch.DoubleTensor)
-    blr = BayesLinRegressor(prior_mean=torch.zeros(50),
-                            prior_alpha=1,
-                            signal_std=1e-2,
-                            num_targets=100,
-                            seed=1)
-    blr.sample_feature_inputs()
-    blr.sample_regression_targets()
-    blr.posterior_update()
-    target = blr.weight_posterior
-    plt.imshow(target.covariance_matrix)
-    plt.show()
+    # blr = BayesLinRegressor(prior_mean=torch.zeros(50),
+    #                         prior_alpha=1,
+    #                         signal_std=1,
+    #                         num_targets=100,
+    #                         seed=1)
+    # blr.sample_feature_inputs()
+    # blr.sample_regression_targets()
+    # blr.posterior_update()
+    # target = blr.weight_posterior
+    # target = compute_variational_posterior(target)
+    # plt.imshow(target.covariance_matrix)
+    # plt.show()
 
+    var_mean = torch.tensor([-1.2828, 1.6508, 1.4314, -0.7785, -0.1488, 0.2930, -0.1225, 2.6420,
+                             0.4913, -0.6382, -0.5173, -1.5689, -1.2808, 1.4096, 1.3054, -0.5755,
+                             -0.1463, 0.1514, 0.1904, 0.4206, -0.4569, 0.5137, 0.4990, -0.4522,
+                             1.6059, -0.0308, 0.7416, 0.1244, 0.4371, 1.4866, -0.0216, 0.0246,
+                             1.6946])
+    var_std = torch.tensor([0.3433, 0.1766, 0.3178, 0.0081, 0.6837, 0.4910, 0.5820, 0.0304, 0.0328,
+                            0.0484, 0.0475, 0.0928, 0.3547, 0.3492, 0.3406, 0.5405, 1.2291, 0.9722,
+                            0.5047, 0.5389, 0.6762, 0.6502, 0.8707, 0.8854, 0.0551, 0.3796, 0.7789,
+                            0.8914, 0.0145, 0.0085, 0.0081, 0.0118, 0.0069])
+
+    target = dist.MultivariateNormal(loc=var_mean, covariance_matrix=torch.diag(var_std ** 2))
     coding_sampler = CodingSampler
     auxiliary_posterior = EmpiricalMixturePosterior
     selection_sampler = GreedySampler
-    n_samples_from_target = 50
+    n_samples_from_target = 100
     omega = 5
-    initial_seed = 100
+    initial_seed = 0
 
     beamwidth = 1
-    epsilon = 0.
+    epsilon = 0.2
     encoder = Encoder(target,
                       initial_seed,
                       coding_sampler,
@@ -315,9 +330,10 @@ if __name__ == '__main__':
     z, indices = encoder.run_encoder()
     best_sample_idx = torch.argmax(target.log_prob(z))
     best_sample = z[best_sample_idx]
-    plot_pairs_of_samples(target, encoder.selected_samples[best_sample_idx], empirical_samples=encoder.auxiliary_posterior.empirical_samples)
-    plt.show()
-
+    # plot_pairs_of_samples(target, encoder.selected_samples[best_sample_idx], empirical_samples=encoder.auxiliary_posterior.empirical_samples)
+    # plt.show()
+    print(target.log_prob(best_sample))
+    print(indices[0])
     # import sys
     # parent_root = "../../../"
     # sys.stdout = open(parent_root + f"Logs/empirical_beam{beamwidth}_epsilon{epsilon}", 'w')

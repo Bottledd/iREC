@@ -32,8 +32,12 @@ class EmpiricalMixturePosterior:
             means = (z - b_k) * mean_scalar
         else:
             b_k = torch.sum(aux_history[:, :k], dim=1)
+            # TODO instead does repeating b_k work?
             for i, z_d in enumerate(z):
                 means[:, i] = (z_d - b_k) * mean_scalar
+            # repeated_b_k = b_k[:, None].repeat(1, z.shape[0], 1)
+            # means = (z - repeated_b_k) * mean_scalar
+
 
         covariances = torch.eye(self.problem_dimension) * variance_scalar
 

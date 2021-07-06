@@ -5,15 +5,14 @@ import torch
 import torch.distributions as dist
 from tqdm import tqdm
 from models.SimpleBayesianLinRegressor import BayesLinRegressor
-from rec.OptimisingVars.VariationalOptimiser import VariationalOptimiser
 from rec.beamsearch.distributions.CodingSampler import CodingSampler
-from rec.beamsearch.distributions.VariationalPosterior import VariationalPosterior
+from rec.beamsearch.distributions.KDEPosterior import KDEPosterior
 from rec.beamsearch.samplers.GreedySampling import GreedySampler
 from rec.beamsearch.utils import convert_flattened_indices
 from rec.utils import kl_estimate_with_mc, compute_variational_posterior, plot_samples_in_2d, plot_running_sum_2d, plot_pairs_of_samples
 
-# TODO Dont need to store multiple matrices for covariance of q(z|a_{1:k})
-class Encoder:
+
+class EncoderKDE:
     def __init__(self,
                  target,
                  initial_seed,
@@ -117,8 +116,8 @@ class Encoder:
                 self.selected_samples_joint_posterior_log_prob[:n_samples_to_add] += auxiliary_posterior_log_prob
 
     def run_encoder(self):
-        # for i in tqdm(range(self.n_auxiliary)):
-        for i in range(self.n_auxiliary):
+        for i in tqdm(range(self.n_auxiliary)):
+        #for i in range(self.n_auxiliary):
             # set the seed
             seed = i + self.initial_seed
             # create new auxiliary prior distribution, p(a_k)
@@ -219,7 +218,7 @@ class Encoder:
                                            coding_dist=auxiliary_prior,
                                            auxiliary_posterior_dist=auxiliary_conditional_posterior_untiled)
 
-                self.auxiliary_posterior.q_z_given_trajectory(self.selected_samples, i, beam_indices)
+                self.auxiliary_posterior.q_z_given_trajectory(self.selected_samples, i)
             else:
                 # cannot compute a conditional posterior for final sample
                 selection_sampler = self.selection_sampler(coding=auxiliary_prior,
@@ -259,35 +258,45 @@ if __name__ == '__main__':
     # target = compute_variational_posterior(target)
     # plt.imshow(target.covariance_matrix)
     # plt.show()
+    #
+    # var_mean = torch.tensor([-1.2828, 1.6508, 1.4314, -0.7785, -0.1488, 0.2930, -0.1225, 2.6420,
+    #                          0.4913, -0.6382, -0.5173, -1.5689, -1.2808, 1.4096, 1.3054, -0.5755,
+    #                          -0.1463, 0.1514, 0.1904, 0.4206, -0.4569, 0.5137, 0.4990, -0.4522,
+    #                          1.6059, -0.0308, 0.7416, 0.1244, 0.4371, 1.4866, -0.0216, 0.0246,
+    #                          1.6946])
+    # var_std = torch.tensor([0.3433, 0.1766, 0.3178, 0.0081, 0.6837, 0.4910, 0.5820, 0.0304, 0.0328,
+    #                         0.0484, 0.0475, 0.0928, 0.3547, 0.3492, 0.3406, 0.5405, 1.2291, 0.9722,
+    #                         0.5047, 0.5389, 0.6762, 0.6502, 0.8707, 0.8854, 0.0551, 0.3796, 0.7789,
+    #                         0.8914, 0.0145, 0.0085, 0.0081, 0.0118, 0.0069])
+    #
+    # target = dist.MultivariateNormal(loc=var_mean, covariance_matrix=torch.diag(var_std ** 2))
+    import pickle as pkl
+    emp_samples = pkl.load(open("../../../PickledStuff/emp_samples.pkl", "rb"))
+    KDE_var = 0.094
+    #n_samples = 100
+    KDE_weights = dist.Categorical(torch.ones(emp_samples.shape[0]))
+    initial_seed = 0
+    torch.manual_seed(initial_seed)
+    KDE_components = dist.MultivariateNormal(loc=emp_samples,
+                                             covariance_matrix=KDE_var * torch.eye(emp_samples.shape[-1]))
 
-    var_mean = torch.tensor([-1.2828, 1.6508, 1.4314, -0.7785, -0.1488, 0.2930, -0.1225, 2.6420,
-                             0.4913, -0.6382, -0.5173, -1.5689, -1.2808, 1.4096, 1.3054, -0.5755,
-                             -0.1463, 0.1514, 0.1904, 0.4206, -0.4569, 0.5137, 0.4990, -0.4522,
-                             1.6059, -0.0308, 0.7416, 0.1244, 0.4371, 1.4866, -0.0216, 0.0246,
-                             1.6946])
-    var_std = torch.tensor([0.3433, 0.1766, 0.3178, 0.0081, 0.6837, 0.4910, 0.5820, 0.0304, 0.0328,
-                            0.0484, 0.0475, 0.0928, 0.3547, 0.3492, 0.3406, 0.5405, 1.2291, 0.9722,
-                            0.5047, 0.5389, 0.6762, 0.6502, 0.8707, 0.8854, 0.0551, 0.3796, 0.7789,
-                            0.8914, 0.0145, 0.0085, 0.0081, 0.0118, 0.0069])
-
-    target = dist.MultivariateNormal(loc=var_mean, covariance_matrix=torch.diag(var_std ** 2))
+    KDE_target = dist.MixtureSameFamily(KDE_weights, KDE_components)
 
     coding_sampler = CodingSampler
-    auxiliary_posterior = VariationalPosterior
+    auxiliary_posterior = KDEPosterior
     selection_sampler = GreedySampler
     omega = 5
-    initial_seed = 0
 
     beamwidth = 1
     epsilon = 0.
-    encoder = Encoder(target,
-                      initial_seed,
-                      coding_sampler,
-                      selection_sampler,
-                      auxiliary_posterior,
-                      omega,
-                      epsilon=epsilon,
-                      beamwidth=beamwidth)
+    encoder = EncoderKDE(KDE_target,
+                          initial_seed,
+                          coding_sampler,
+                          selection_sampler,
+                          auxiliary_posterior,
+                          omega,
+                          epsilon=epsilon,
+                          beamwidth=beamwidth)
 
     n_auxiliaries = encoder.n_auxiliary
     kl_q_p = encoder.total_kl
@@ -308,11 +317,11 @@ if __name__ == '__main__':
         pass
 
     z, indices = encoder.run_encoder()
-    best_sample_idx = torch.argmax(target.log_prob(z))
+    best_sample_idx = torch.argmax(KDE_target.log_prob(z))
     best_sample = z[best_sample_idx]
     #plot_pairs_of_samples(target, encoder.selected_samples[best_sample_idx])
     #plt.show()
-    print(target.log_prob(best_sample))
+    print(KDE_target.log_prob(best_sample))
     print(indices[0])
     # mahalanobis_dist = torch.sqrt(
     #     (true_target.mean - best_sample).T @ true_target.covariance_matrix @ (true_target.mean - best_sample))

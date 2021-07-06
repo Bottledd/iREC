@@ -10,7 +10,6 @@ from models.BNNs.Layers.DeterministicLayer import DeterministicLayer
 class BNN_for_HMC(nn.Module):
     def __init__(self, input_size=1, num_nodes=10, output_size=1, alpha=1., beta=5.):
         super(BNN_for_HMC, self).__init__()
-        self.input_size = input_size
         self.input_layer = DeterministicLayer(input_size, num_nodes)
         self.hidden_layer = DeterministicLayer(num_nodes, num_nodes)
         self.final_layer = DeterministicLayer(num_nodes, output_size)
