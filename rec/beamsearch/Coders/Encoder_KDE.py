@@ -116,8 +116,8 @@ class EncoderKDE:
                 self.selected_samples_joint_posterior_log_prob[:n_samples_to_add] += auxiliary_posterior_log_prob
 
     def run_encoder(self):
-        for i in tqdm(range(self.n_auxiliary)):
-        #for i in range(self.n_auxiliary):
+        #for i in tqdm(range(self.n_auxiliary)):
+        for i in range(self.n_auxiliary):
             # set the seed
             seed = i + self.initial_seed
             # create new auxiliary prior distribution, p(a_k)
