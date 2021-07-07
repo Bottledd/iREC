@@ -76,10 +76,9 @@ class BNN_KDE(nn.Module):
         return x_data, weight_samples
 
     def data_likelihood(self, y_preds, y_data):
-        # first compute regression
-        likelihood = D.Independent(D.Normal(loc=y_preds,
-                              scale=1. / self.likelihood_beta ** 0.5), 1)
-        return likelihood.log_prob(y_data.flatten())
+        likelihood_lp = D.Normal(loc=y_preds, scale=1. / self.likelihood_beta ** 0.5).log_prob(y_data.flatten()).sum(
+            -1)
+        return likelihood_lp
 
     def joint_log_prob(self, x, y, n_samples):
         y_preds, weight_samples = self.batch_regression(x, n_samples)
@@ -106,7 +105,7 @@ if __name__ == '__main__':
     xs = pkl.load(open("../../PickledStuff/xs.pkl", "rb"))
     ys = pkl.load(open("../../PickledStuff/ys.pkl", "rb"))
 
-    test = BNN_KDE(emp_samples)
+    test = BNN_KDE(emp_samples[torch.unique(torch.randint(low=0, high=emp_samples.shape[0], size=(100,)))])
     test_r, w = test.batch_regression(x_data, 10000)
 
     import matplotlib.pyplot as plt
@@ -116,11 +115,13 @@ if __name__ == '__main__':
     plt.show()
 
     num_epochs = 1000
-    num_parallel_samples = 1000
+    num_parallel_samples = 100
     optimiser = torch.optim.Adamax(test.parameters(), lr=1e-1)
     losses = []
     stds = []
     for i in range(num_epochs):
+        if i == 500:
+            print('break')
         optimiser.zero_grad()
         loss = -test.elbo(x_data, y_data, num_parallel_samples)
         losses.append(loss.item())

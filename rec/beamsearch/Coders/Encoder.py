@@ -292,12 +292,12 @@ if __name__ == '__main__':
     coding_sampler = CodingSampler
     auxiliary_posterior = EmpiricalMixturePosterior
     selection_sampler = GreedySampler
-    n_samples_from_target = 100
+    n_samples_from_target = 5000
     omega = 5
     initial_seed = 0
 
     beamwidth = 1
-    epsilon = 0.2
+    epsilon = 0.
     encoder = Encoder(target,
                       initial_seed,
                       coding_sampler,

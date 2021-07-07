@@ -49,8 +49,10 @@ class Encoder:
         instance_coding_sampler = coding_sampler(problem_dimension=self.problem_dimension,
                                                  n_auxiliary=self.n_auxiliary, var=1)
 
-        self.auxiliary_posterior = auxiliary_posterior(target,
-                                                       n_samples_from_target,
+        torch.manual_seed(initial_seed)
+        self.empirical_samples = target.sample((n_samples_from_target,))
+
+        self.auxiliary_posterior = auxiliary_posterior(self.empirical_samples,
                                                        instance_coding_sampler)
 
         # auxiliary samples that are selected
@@ -149,24 +151,38 @@ class Encoder:
 
 
 if __name__ == '__main__':
-    initial_seed_target = 10
-    blr = BayesLinRegressor(prior_mean=torch.zeros(2),
-                            prior_alpha=1,
-                            signal_std=1,
-                            num_targets=10000,
-                            seed=initial_seed_target)
-    blr.sample_feature_inputs()
-    blr.sample_regression_targets()
-    blr.posterior_update()
-    target = blr.weight_posterior
+    torch.set_default_tensor_type(torch.DoubleTensor)
+    # initial_seed_target = 10
+    # blr = BayesLinRegressor(prior_mean=torch.zeros(2),
+    #                         prior_alpha=1,
+    #                         signal_std=1,
+    #                         num_targets=10000,
+    #                         seed=initial_seed_target)
+    # blr.sample_feature_inputs()
+    # blr.sample_regression_targets()
+    # blr.posterior_update()
+    # target = blr.weight_posterior
+
+    var_mean = torch.tensor([-1.2828, 1.6508, 1.4314, -0.7785, -0.1488, 0.2930, -0.1225, 2.6420,
+                             0.4913, -0.6382, -0.5173, -1.5689, -1.2808, 1.4096, 1.3054, -0.5755,
+                             -0.1463, 0.1514, 0.1904, 0.4206, -0.4569, 0.5137, 0.4990, -0.4522,
+                             1.6059, -0.0308, 0.7416, 0.1244, 0.4371, 1.4866, -0.0216, 0.0246,
+                             1.6946])
+    var_std = torch.tensor([0.3433, 0.1766, 0.3178, 0.0081, 0.6837, 0.4910, 0.5820, 0.0304, 0.0328,
+                            0.0484, 0.0475, 0.0928, 0.3547, 0.3492, 0.3406, 0.5405, 1.2291, 0.9722,
+                            0.5047, 0.5389, 0.6762, 0.6502, 0.8707, 0.8854, 0.0551, 0.3796, 0.7789,
+                            0.8914, 0.0145, 0.0085, 0.0081, 0.0118, 0.0069])
+
+    target = dist.MultivariateNormal(loc=var_mean, covariance_matrix=torch.diag(var_std ** 2))
 
     coding_sampler = CodingSampler
     auxiliary_posterior = EmpiricalMixturePosterior
     selection_sampler = GreedySampler
-    n_samples_from_target = 50
+    n_samples_from_target = 100
     omega = 5
-    initial_seed = 950085
+    initial_seed = 0
 
+    epsilon = 0.
     encoder = Encoder(target,
                       initial_seed,
                       coding_sampler,
@@ -196,17 +212,18 @@ if __name__ == '__main__':
 
     print(f"Run Encoder!")
     z, indices = encoder.run_encoder()
-    mahalobonis_dist = torch.sqrt((target.mean - z).T @ target.covariance_matrix @ (target.mean - z))
-    print(f"The MSE is: {blr.measure_performance(z, kind='MSE')}\n"
-          f"The MAE is: {blr.measure_performance(z, kind='MAE')}\n\n"
-          f"The MSE of MAP is: {blr.measure_performance(target.mean, kind='MSE')}\n"
-          f"The MAE of MAP is: {blr.measure_performance(target.mean, kind='MAE')}\n"
-          f"The Mahalobonis distance is: {mahalobonis_dist}\n"
-          f"The MSE using true samples is: {blr.measure_true_performance(kind='MSE')}\n"
-          f"The MAE using true samples is: {blr.measure_true_performance(kind='MAE')}\n"
-          f"The % drop-off to MAP MSE is: {(blr.measure_performance(z, kind='MSE') - blr.measure_performance(target.mean, kind='MSE')) / blr.measure_performance(target.mean, kind='MSE') * 100}\n"
-          f"The % drop-off to MAP MAE is: {(blr.measure_performance(z, kind='MAE') - blr.measure_performance(target.mean, kind='MAE')) / blr.measure_performance(target.mean, kind='MAE') * 100}\n"
-          f"log q(z)/p(z) is: {target.log_prob(z) - encoder.auxiliary_posterior.coding_sampler.log_prob(z)}")
+    print(f"{target.log_prob(z)}")
+    # mahalobonis_dist = torch.sqrt((target.mean - z).T @ target.covariance_matrix @ (target.mean - z))
+    # print(f"The MSE is: {blr.measure_performance(z, kind='MSE')}\n"
+    #       f"The MAE is: {blr.measure_performance(z, kind='MAE')}\n\n"
+    #       f"The MSE of MAP is: {blr.measure_performance(target.mean, kind='MSE')}\n"
+    #       f"The MAE of MAP is: {blr.measure_performance(target.mean, kind='MAE')}\n"
+    #       f"The Mahalobonis distance is: {mahalobonis_dist}\n"
+    #       f"The MSE using true samples is: {blr.measure_true_performance(kind='MSE')}\n"
+    #       f"The MAE using true samples is: {blr.measure_true_performance(kind='MAE')}\n"
+    #       f"The % drop-off to MAP MSE is: {(blr.measure_performance(z, kind='MSE') - blr.measure_performance(target.mean, kind='MSE')) / blr.measure_performance(target.mean, kind='MSE') * 100}\n"
+    #       f"The % drop-off to MAP MAE is: {(blr.measure_performance(z, kind='MAE') - blr.measure_performance(target.mean, kind='MAE')) / blr.measure_performance(target.mean, kind='MAE') * 100}\n"
+    #       f"log q(z)/p(z) is: {target.log_prob(z) - encoder.auxiliary_posterior.coding_sampler.log_prob(z)}")
     # plot_samples_in_2d(target=target)
     # plot_samples_in_2d(empirical_samples=encoder.auxiliary_posterior.empirical_samples)
     # plot_samples_in_2d(coded_sample=z)
