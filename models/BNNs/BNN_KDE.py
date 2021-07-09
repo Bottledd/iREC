@@ -4,7 +4,7 @@ from torch import nn
 
 
 class BNN_KDE(nn.Module):
-    def __init__(self, emp_samples, input_size=1, num_nodes=2, output_size=1, alpha=1., beta=5.):
+    def __init__(self, emp_samples, input_size=1, num_nodes=2, output_size=1, alpha=1., beta=5., kl_beta=1.):
         super(BNN_KDE, self).__init__()
         self.register_buffer('emp_samples', emp_samples)
         self.log_kde_std = nn.Parameter(torch.tensor([-1.]))
@@ -15,6 +15,7 @@ class BNN_KDE(nn.Module):
         self.input_size = input_size
         self.num_nodes = num_nodes
         self.output_size = output_size
+        self.kl_beta = kl_beta
 
     @property
     def kde(self):
@@ -78,8 +79,11 @@ class BNN_KDE(nn.Module):
     def data_likelihood(self, y_preds, y_data):
         likelihood_lp = D.Normal(loc=y_preds, scale=1. / self.likelihood_beta ** 0.5).log_prob(y_data.flatten()).sum(
             -1)
-        return likelihood_lp
-
+        return likelihood_lp.mean()
+    
+    def weight_prior_lp(self, weight_samples):
+        return self.weight_prior.log_prob(weight_samples).sum(1)
+    
     def joint_log_prob(self, x, y, n_samples):
         y_preds, weight_samples = self.batch_regression(x, n_samples)
 
@@ -90,10 +94,14 @@ class BNN_KDE(nn.Module):
         return likelihood_lp.mean() + weight_prior_lp.mean(), weight_samples
 
     def elbo(self, x, y, n_samples):
-        p_joint_lp, weight_samples = self.joint_log_prob(x, y, n_samples)
-        q_lp = self.kde.log_prob(weight_samples).mean()
-
-        return p_joint_lp - q_lp
+        y_preds, weight_samples = self.batch_regression(x, n_samples)
+        weight_prior_lp = self.weight_prior_lp(weight_samples)
+        data_likelihood_lp = self.data_likelihood(y_preds, y)
+        q_lp = self.kde.log_prob(weight_samples)
+        
+        kl_term = (q_lp - weight_prior_lp).mean()
+        
+        return data_likelihood_lp - self.kl_beta * kl_term
 
 
 if __name__ == '__main__':
