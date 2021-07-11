@@ -70,9 +70,9 @@ class VariationalOptimiser(nn.Module):
 
         return loss, torch.mean(aux_kl)
 
-    def run_optimiser(self, epochs=500):
+    def run_optimiser(self, epochs=500, lr=1e-2):
         torch.autograd.set_detect_anomaly(True)
-        optimiser = torch.optim.Adam(self.parameters(), lr=7e-2)
+        optimiser = torch.optim.Adam(self.parameters(), lr=lr)
         pbar = trange(epochs)
         for i in pbar:
             losses = torch.zeros(self.n_auxiliaries - 1).to(self.pre_softmax_aux_vars.device)
