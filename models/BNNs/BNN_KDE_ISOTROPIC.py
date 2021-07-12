@@ -7,8 +7,7 @@ class BNN_KDE(nn.Module):
     def __init__(self, emp_samples, input_size=1, num_nodes=2, output_size=1, alpha=1., beta=5., kl_beta=1.):
         super(BNN_KDE, self).__init__()
         self.register_buffer('emp_samples', emp_samples)
-        # self.log_kde_std = nn.Parameter(torch.tensor([-1.]))
-        self.log_kde_rhos = nn.Parameter(torch.zeros_like(emp_samples))
+        self.log_kde_rhos = nn.Parameter(torch.zeros(emp_samples.shape[0]))
         self.prior_alpha = alpha
         self.likelihood_beta = beta
         self.weight_prior = D.Normal(loc=0., scale=1. / alpha ** 0.5)
@@ -22,14 +21,15 @@ class BNN_KDE(nn.Module):
     def kde(self):
         batch_dim, problem_dim = self.emp_samples.shape
         mixture_weights = D.Categorical(probs=torch.ones(batch_dim))
-        kde_var = torch.clamp(F.softplus(self.log_kde_rhos, beta=1.) ** 2, min=1e-6, max=1e3)
+        kde_var = F.softplus(self.log_kde_rhos, beta=1.) ** 2
+        covariances = torch.eye(problem_dim)[None].repeat(self.log_kde_rhos.shape[0], 1, 1)
         gaussian_components = D.MultivariateNormal(loc=self.emp_samples,
-                                                   covariance_matrix=torch.diag_embed(kde_var))
+                                                   covariance_matrix=kde_var * covariances)
 
         return D.MixtureSameFamily(mixture_weights, gaussian_components)
 
     def sample_from_kde(self, n_samples):
-        kde_std = torch.clamp(F.softplus(self.log_kde_rhos, beta=1.), min=1e-10, max=1e3)
+        kde_std = F.softplus(self.log_kde_rhos, beta=1.)
         # first need to randomly sample indices for which component to choose
         rand_idxs = torch.randint(low=0, high=self.emp_samples.shape[0], size=(n_samples,))
 
