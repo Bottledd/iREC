@@ -143,16 +143,26 @@ class BayesLinRegressor:
         plt.fill_between(x_axis, mean - 1.96 * error ** 0.5, mean + 1.96 * error ** 0.5,
                          color='gray', alpha=0.2)
 
-    def empirical_prediction(self, weights):
-        # broadcast to correct shapes
-        weight_matrix = torch.tile(weights, (self.feature_targets_test.shape[0], 1))
+    def empirical_prediction(self, weights, training_data=False):
+        if training_data:
+            # broadcast to correct shapes
+            weight_matrix = torch.tile(weights, (self.feature_targets_train.shape[0], 1))
 
-        # make feature matrix
-        feature_matrix = torch.hstack((self.feature_targets_test, torch.ones(self.feature_targets_test.shape[0], 1)))
+            # make feature matrix
+            feature_matrix = torch.hstack((self.feature_targets_train, torch.ones(self.feature_targets_train.shape[0], 1)))
 
-        # multiply weights to features
-        feature_times_weights = torch.sum(weight_matrix * feature_matrix, dim=1)
+            # multiply weights to features
+            feature_times_weights = torch.sum(weight_matrix * feature_matrix, dim=1)
+        else:
+            # broadcast to correct shapes
+            weight_matrix = torch.tile(weights, (self.feature_targets_test.shape[0], 1))
 
+            # make feature matrix
+            feature_matrix = torch.hstack((self.feature_targets_test, torch.ones(self.feature_targets_test.shape[0], 1)))
+
+            # multiply weights to features
+            feature_times_weights = torch.sum(weight_matrix * feature_matrix, dim=1)
+            
         return feature_times_weights
 
     def measure_performance(self, weights, kind='MSE'):

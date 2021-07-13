@@ -6,9 +6,9 @@ from torch.nn import functional as F
 class BNN_KDE(nn.Module):
     def __init__(self, emp_samples, input_size=1, num_nodes=2, output_size=1, alpha=1., beta=5., kl_beta=1.):
         super(BNN_KDE, self).__init__()
-        self.register_buffer('emp_samples', emp_samples)
-        # self.log_kde_std = nn.Parameter(torch.tensor([-1.]))
-        self.log_kde_rhos = nn.Parameter(torch.zeros_like(emp_samples))
+        self.means = nn.Parameter(emp_samples)
+        self.mixing_weights_logits = nn.Parameter(torch.ones(emp_samples.shape[0]))
+        self.log_kde_rhos = nn.Parameter(torch.ones_like(emp_samples))
         self.prior_alpha = alpha
         self.likelihood_beta = beta
         self.weight_prior = D.Normal(loc=0., scale=1. / alpha ** 0.5)
@@ -20,24 +20,24 @@ class BNN_KDE(nn.Module):
 
     @property
     def kde(self):
-        batch_dim, problem_dim = self.emp_samples.shape
-        mixture_weights = D.Categorical(probs=torch.ones(batch_dim))
-        kde_var = torch.clamp(F.softplus(self.log_kde_rhos, beta=1.) ** 2, min=1e-6, max=1e3)
-        gaussian_components = D.MultivariateNormal(loc=self.emp_samples,
+        batch_dim, problem_dim = self.means.shape
+        mixture_weights = D.Categorical(probs=torch.softmax(self.mixing_weights_logits, dim=0))
+        kde_var = F.softplus(self.log_kde_rhos, beta=1.) ** 2
+        gaussian_components = D.MultivariateNormal(loc=self.means,
                                                    covariance_matrix=torch.diag_embed(kde_var))
 
         return D.MixtureSameFamily(mixture_weights, gaussian_components)
 
     def sample_from_kde(self, n_samples):
-        kde_std = torch.clamp(F.softplus(self.log_kde_rhos, beta=1.), min=1e-10, max=1e3)
+        kde_std = F.softplus(self.log_kde_rhos, beta=1.)
         # first need to randomly sample indices for which component to choose
-        rand_idxs = torch.randint(low=0, high=self.emp_samples.shape[0], size=(n_samples,))
+        rand_idxs = torch.randint(low=0, high=self.means.shape[0], size=(n_samples,))
 
         # create batch of eps ~ N(0, I)
-        eps = torch.randn(size=(n_samples, self.emp_samples.shape[-1]))
+        eps = torch.randn(size=(n_samples, self.means.shape[-1]))
 
         # for each chosen idx, sample from that mixture component
-        chosen_emp_samples = self.emp_samples[rand_idxs]
+        chosen_samples = self.means[rand_idxs]
         chosen_stds = kde_std[rand_idxs]
 
         samples = chosen_emp_samples + eps * chosen_stds
@@ -101,9 +101,24 @@ class BNN_KDE(nn.Module):
         data_likelihood_lp = self.data_likelihood(y_preds, y)
         q_lp = self.kde.log_prob(weight_samples)
 
-        kl_term = (q_lp - weight_prior_lp).mean()
+        kl_term = q_lp - weight_prior_lp
 
-        return data_likelihood_lp - self.kl_beta * kl_term
+        return (data_likelihood_lp - self.kl_beta * kl_term).mean()
 
+    def reinforce_loss(self, x, y, n_samples):
+        # first sample weights from KDE
+        weight_samples = self.kde.sample((n_samples,))
+        y_preds = self.batch_regression(weight_samples, x, n_samples)
+        weight_prior_lp = self.weight_prior_lp(weight_samples)
+        data_likelihood_lp = self.data_likelihood(y_preds, y)
+        q_lp = self.kde.log_prob(weight_samples)
+        
+        with torch.no_grad():
+            no_grad_elbo = data_likelihood_lp + self.kl_beta * (weight_prior_lp - q_lp)
+        reinforce_term_1 = q_lp * no_grad_elbo
+        reinforce_term_2 = data_likelihood_lp + self.kl_beta * (weight_prior_lp - q_lp)
+
+        return (reinforce_term_1 + reinforce_term_2).mean()
+    
     def log_q_w(self, weight_samples):
         return self.kde.log_prob(weight_samples).mean()
