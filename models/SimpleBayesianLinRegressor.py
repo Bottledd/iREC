@@ -9,7 +9,8 @@ class BayesLinRegressor:
                  prior_alpha: torch.float,
                  signal_std: torch.float,
                  num_targets: torch.float,
-                 seed: torch.float
+                 seed: torch.float,
+                 num_train_points=None,
                  ):
         torch.manual_seed(seed)
         self.prior_mean = prior_mean
@@ -26,6 +27,7 @@ class BayesLinRegressor:
         self.weight_posterior = None
         self.num_targets = num_targets
         self.true_sample = None
+        self.num_train_points = num_train_points
 
     def sample_feature_inputs(self):
         standard_normal = dst.Normal(loc=0.0, scale=1.0)
@@ -33,7 +35,10 @@ class BayesLinRegressor:
         self.feature_targets = standard_normal.sample((self.num_targets, self.dim))
 
         # train with min(num_targets / 10, dim)
-        num_train_samples = int(self.dim)
+        if self.num_train_points is not None:
+            num_train_samples = int(self.num_train_points)
+        else:  
+            num_train_samples = int(self.dim)
         self.feature_targets_train = self.feature_targets[:num_train_samples]
         self.feature_targets_test = self.feature_targets[num_train_samples:]
 
@@ -55,7 +60,10 @@ class BayesLinRegressor:
         self.regression_targets = feature_times_weights + additive_noise
 
         # train with min(num_targets / 10, dim)
-        num_train_samples = int(self.dim)
+        if self.num_train_points is not None:
+            num_train_samples = int(self.num_train_points)
+        else:  
+            num_train_samples = int(self.dim)
         self.regression_targets_train = self.regression_targets[:num_train_samples]
         self.regression_targets_test = self.regression_targets[num_train_samples:]
 
@@ -143,25 +151,36 @@ class BayesLinRegressor:
         plt.fill_between(x_axis, mean - 1.96 * error ** 0.5, mean + 1.96 * error ** 0.5,
                          color='gray', alpha=0.2)
 
-    def empirical_prediction(self, weights, training_data=False):
-        if training_data:
+    def empirical_prediction(self, weights, training_data=False, feature_targets=None):
+        if feature_targets is not None:
             # broadcast to correct shapes
-            weight_matrix = torch.tile(weights, (self.feature_targets_train.shape[0], 1))
+            weight_matrix = torch.tile(weights, (feature_targets.shape[0], 1))
 
             # make feature matrix
-            feature_matrix = torch.hstack((self.feature_targets_train, torch.ones(self.feature_targets_train.shape[0], 1)))
+            feature_matrix = torch.hstack((feature_targets, torch.ones(feature_targets.shape[0], 1)))
 
             # multiply weights to features
             feature_times_weights = torch.sum(weight_matrix * feature_matrix, dim=1)
+        
         else:
-            # broadcast to correct shapes
-            weight_matrix = torch.tile(weights, (self.feature_targets_test.shape[0], 1))
+            if training_data:
+                # broadcast to correct shapes
+                weight_matrix = torch.tile(weights, (self.feature_targets_train.shape[0], 1))
 
-            # make feature matrix
-            feature_matrix = torch.hstack((self.feature_targets_test, torch.ones(self.feature_targets_test.shape[0], 1)))
+                # make feature matrix
+                feature_matrix = torch.hstack((self.feature_targets_train, torch.ones(self.feature_targets_train.shape[0], 1)))
 
-            # multiply weights to features
-            feature_times_weights = torch.sum(weight_matrix * feature_matrix, dim=1)
+                # multiply weights to features
+                feature_times_weights = torch.sum(weight_matrix * feature_matrix, dim=1)
+            else:
+                # broadcast to correct shapes
+                weight_matrix = torch.tile(weights, (self.feature_targets_test.shape[0], 1))
+
+                # make feature matrix
+                feature_matrix = torch.hstack((self.feature_targets_test, torch.ones(self.feature_targets_test.shape[0], 1)))
+
+                # multiply weights to features
+                feature_times_weights = torch.sum(weight_matrix * feature_matrix, dim=1)
             
         return feature_times_weights
 
