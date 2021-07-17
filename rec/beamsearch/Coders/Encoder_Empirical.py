@@ -17,7 +17,7 @@ from models.BNNs.BNN_for_HMC import BNN_for_HMC
 
 class Encoder:
     def __init__(self,
-                 model: BNN_for_HMC,
+                 model,
                  x_data,
                  y_data,
                  empirical_samples,
