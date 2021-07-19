@@ -29,8 +29,8 @@ class BBPLinear(nn.Module):
         self.b_prior_sigma = priors['prior_sigma']
 
         # learnable posterior parameters
-        self.w_post_mu = nn.Parameter(torch.Tensor(self.in_features, self.out_features).uniform_(-0.1, 0.1))
-        self.w_post_rho = nn.Parameter(torch.Tensor(self.in_features, self.out_features).uniform_(-3., -2.))
+        self.w_post_mu = nn.Parameter(torch.Tensor(self.out_features, self.in_features).uniform_(-0.1, 0.1))
+        self.w_post_rho = nn.Parameter(torch.Tensor(self.out_features, self.in_features).uniform_(-3., -2.))
 
         self.b_post_mu = nn.Parameter(torch.Tensor(self.out_features).uniform_(-0.1, 0.1))
         self.b_post_rho = nn.Parameter(torch.Tensor(self.out_features).uniform_(-3., -2.))
@@ -38,7 +38,7 @@ class BBPLinear(nn.Module):
     def forward(self, x, sample=True):
         if not sample:
             # act mu is given by AW where A is  inputs and W_ij = mu_ij
-            activation_mu = torch.einsum("bi, ij -> bj", x, self.w_post_mu) + self.b_post_mu[None].repeat(x.shape[0], 1)
+            activation_mu = torch.einsum("ij, jk -> ki", self.w_post_mu, x) + self.b_post_mu[None].repeat(x.shape[0], 1)
 
             return activation_mu
 
@@ -48,10 +48,10 @@ class BBPLinear(nn.Module):
             b_post_sigma = F.softplus(self.b_post_rho, beta=1.)
 
             # act mu is given by AW where A is  inputs and W_ij = mu_ij
-            activation_mu = torch.einsum("bi, ij -> bj", x, self.w_post_mu) + self.b_post_mu[None].repeat(x.shape[0], 1)
+            activation_mu = torch.einsum("ij, kj -> ki", self.w_post_mu, x) + self.b_post_mu[None].repeat(x.shape[0], 1)
 
             # act sigma is given by A*W* where A*_ij = a_ij^2 and W* = sigma_ij^2
-            activation_var = torch.einsum("bi, ij -> bj", x**2, w_post_sigma ** 2) + b_post_sigma.pow(2)[None].repeat(x.shape[0], 1)
+            activation_var = torch.einsum("ij, kj -> ki", w_post_sigma ** 2, x**2) + b_post_sigma.pow(2)[None].repeat(x.shape[0], 1)
             activation_sigma = torch.sqrt(activation_var)
 
             # sample epsilon ~ N(0, 1)

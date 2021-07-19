@@ -45,7 +45,7 @@ class BNN_for_HMC(nn.Module):
         x_data = self.activation(x_data)
         
         # compute final output
-        x_data = torch.einsum("ij, ki -> ki", self.layer_3_w, x_data) + self.layer_3_b[None].repeat(batch_x_dim, 1)
+        x_data = torch.einsum("ij, kj -> ki", self.layer_3_w, x_data) + self.layer_3_b[None].repeat(batch_x_dim, 1)
 
         return x_data
 

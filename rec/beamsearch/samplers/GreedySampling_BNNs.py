@@ -57,7 +57,7 @@ class GreedySampler:
             # make a model
             self.model.make_weights_from_sample(z_sample)
 
-            loss = self.model.data_likelihood(self.x_data, self.y_data)
+            loss = self.model.joint_log_prob(self.x_data, self.y_data)
             losses = torch.cat([losses, loss[None]])
         return losses
 
