@@ -10,7 +10,7 @@ from models.BNNs.Layers.BBPLinear import BBPLinear
 
 
 class SimpleBBPBNN(nn.Module):
-    def __init__(self, input_size=1, num_nodes=10, output_size=1, alpha=1., beta=5.):
+    def __init__(self, input_size=1, num_nodes=10, output_size=1, alpha=1., beta=1., kl_beta=1.):
         super(SimpleBBPBNN, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
@@ -23,11 +23,12 @@ class SimpleBBPBNN(nn.Module):
         self.output_layer = BBPLinear(num_nodes, self.output_size, self.priors)
 
         self.likelihood_beta = beta
-        self.activation = torch.tanh
+        self.kl_beta = kl_beta
+        self.activation = torch.relu
 
     def forward(self, x):
 
-        x, kld_input_layer = self.input_layer(x.view(-1, 1))
+        x, kld_input_layer = self.input_layer(x)
 
         x = self.activation(x)
 
@@ -40,10 +41,14 @@ class SimpleBBPBNN(nn.Module):
         return y, kld_input_layer + kld_hidden_layer + kld_output_layer
 
     def forward_using_mean(self, x):
-        x = self.input_layer(x.view(-1, 1), sample=False)
+        x = self.input_layer(x, sample=False)
 
         x = self.activation(x)
-
+        
+        x = self.hidden_layer(x, sample=False)
+        
+        x = self.activation(x)
+        
         y = self.output_layer(x, sample=False)
 
         return y
@@ -52,7 +57,7 @@ class SimpleBBPBNN(nn.Module):
         y_preds = x.data.new(num_samples, x.shape[0], self.output_size)
 
         for i in range(num_samples):
-            y, _ = self.forward(x.view(-1, 1))
+            y, _ = self.forward(x)
             y_preds[i] = y
 
         return y_preds
@@ -61,7 +66,7 @@ class SimpleBBPBNN(nn.Module):
         likelihood_dist = D.Normal(loc=y_preds, scale=(1. / self.likelihood_beta) ** 0.5)
         likelihood_term = -likelihood_dist.log_prob(y).sum()
 
-        return likelihood_term + kld
+        return likelihood_term + self.kl_beta * kld
 
     def get_mvn_params(self):
         means = torch.empty([0])

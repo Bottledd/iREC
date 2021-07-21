@@ -9,7 +9,7 @@ from pyro.contrib.bnn.hidden_layer import HiddenLayer
 
 
 class BayesianNeuralNetwork(PyroModule):
-    def __init__(self, in_features=4, hidden_nodes=10, out_features=3, prior_var=1.):
+    def __init__(self, in_features=4, hidden_nodes=10, out_features=3, prior_var=1., kl_beta=1.):
         super(BayesianNeuralNetwork, self).__init__()
         self.input_layer = PyroModule[nn.Linear](in_features, hidden_nodes)
         self.input_layer.weight = PyroSample(dist.Normal(0., prior_var ** 0.5).expand([hidden_nodes, in_features]).to_event(2))
@@ -22,14 +22,15 @@ class BayesianNeuralNetwork(PyroModule):
         self.output_layer.weight = PyroSample(
             dist.Normal(0., prior_var ** 0.5).expand([out_features, hidden_nodes]).to_event(2))
         self.output_layer.bias = PyroSample(dist.Normal(0., prior_var ** 0.5).expand([out_features]).to_event(1))
-
+        
+        self.kl_beta = kl_beta
         self.prior_var = prior_var
         self.activation = torch.tanh
 
     def forward(self, x, y=None):
         x = self.activation(self.input_layer(x))
         x = self.activation(self.hidden_layer(x))
-        logits = self.output_layer(x)
+        logits = self.output_layer(x) * self.kl_beta ** -1
         
         with pyro.plate('data'):
             pyro.sample('obs', dist.Categorical(logits=logits), obs=y)
