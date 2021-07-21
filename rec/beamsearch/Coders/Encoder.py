@@ -24,7 +24,8 @@ class Encoder:
                  n_samples_from_target,
                  beamwidth,
                  epsilon=0.,
-                 ):
+                 prior_var=1,
+                total_kl=None):
         # instantiate the beamwidth
         self.beamwidth = beamwidth
 
@@ -35,13 +36,16 @@ class Encoder:
         # first try with torch distributions
 
         # create dummy coding object to compute kl with target
-        coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1, var=1)
-
-        try:
-            kl_q_p = dist.kl_divergence(target, coding_z_prior)
-        except:
-            # need to do MC estimate
-            kl_q_p = kl_estimate_with_mc(target, coding_z_prior)
+        coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1, var=prior_var)
+        
+        if total_kl is not None:
+            kl_q_p = total_kl
+        else:
+            try:
+                kl_q_p = dist.kl_divergence(target, coding_z_prior)
+            except:
+                # need to do MC estimate
+                kl_q_p = kl_estimate_with_mc(target, coding_z_prior)
 
         self.total_kl = kl_q_p
 
@@ -54,7 +58,7 @@ class Encoder:
         # instantiate the coding sampler and auxiliary posterior
         instance_coding_sampler = coding_sampler(problem_dimension=self.problem_dimension,
                                                  n_auxiliary=self.n_auxiliary,
-                                                 var=1)
+                                                 var=prior_var)
 
         torch.manual_seed(initial_seed)
         self.empirical_samples = target.sample((n_samples_from_target,))
