@@ -7,7 +7,7 @@ class CodingSampler(dist.MultivariateNormal):
                  problem_dimension,
                  n_auxiliary,
                  var=1,
-                 sigma_setting='power_rule',
+                 sigma_setting='uniform',
                  power_rule_exponent=0.445,
                  sigma_vector=None):
 

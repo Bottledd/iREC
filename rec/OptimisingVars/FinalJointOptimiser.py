@@ -10,7 +10,7 @@ import numpy as np
 
 
 class FinalJointOptimiser(nn.Module):
-    def __init__(self, z_sample, omega, n_auxiliaries, total_kl, n_trajectories=1000, total_var=1):
+    def __init__(self, z_sample, omega, n_auxiliaries, total_kl, n_trajectories=1000, total_var=1, lr=3e-2):
         super(FinalJointOptimiser, self).__init__()
         self.n_auxiliaries = n_auxiliaries
         self.n_trajectories = n_trajectories
@@ -22,6 +22,7 @@ class FinalJointOptimiser(nn.Module):
         self.pre_softmax_aux_vars = nn.Parameter(torch.ones(n_auxiliaries))
         self.kl_history = []
         self.total_kl = float(total_kl)
+        self.lr=lr
 
     def get_aux_post_params(self, index):
         sigma_ks = nn.functional.softmax(self.pre_softmax_aux_vars, dim=0) * self.total_var
@@ -56,7 +57,7 @@ class FinalJointOptimiser(nn.Module):
         return loss, torch.mean(aux_kl)
 
     def run_optimiser(self, epochs=1500):
-        optimiser = torch.optim.Adam(self.parameters(), lr=3e-2)
+        optimiser = torch.optim.Adam(self.parameters(), lr=self.lr)
         pbar = trange(epochs)
         for i in pbar:
             losses = torch.zeros(self.n_auxiliaries - 1).to(self.pre_softmax_aux_vars.device)

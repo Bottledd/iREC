@@ -23,6 +23,7 @@ class EncoderKDE:
                  beamwidth,
                  epsilon=0.,
                  prior_var=1.,
+                 total_kl=None
                  ):
         # instantiate the beamwidth
         self.beamwidth = beamwidth
@@ -35,12 +36,15 @@ class EncoderKDE:
 
         # create dummy coding object to compute kl with target
         coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1, var=prior_var)
-
-        try:
-            kl_q_p = dist.kl_divergence(target, coding_z_prior)
-        except:
-            # need to do MC estimate
-            kl_q_p = kl_estimate_with_mc(target, coding_z_prior)
+        
+        if total_kl is not None:
+            kl_q_p = total_kl
+        else:
+            try:
+                kl_q_p = dist.kl_divergence(target, coding_z_prior)
+            except:
+                # need to do MC estimate
+                kl_q_p = kl_estimate_with_mc(target, coding_z_prior)
 
         self.total_kl = kl_q_p
 
@@ -228,7 +232,8 @@ class EncoderKDE:
                                                            coding_joint_history=self.selected_samples_joint_coding_log_prob,
                                                            target_joint_history=self.selected_samples_joint_posterior_log_prob,
                                                            is_final_sample=True,
-                                                           topk=self.beamwidth)
+                                                           topk=self.beamwidth,
+                                                           z_prior=self.auxiliary_posterior.coding_sampler)
                 trial_aks = selection_sampler.get_samples_from_coder()
                 repeated_aks = torch.repeat_interleave(trial_aks, self.beamwidth, dim=0)
                 indices, samples = selection_sampler.choose_samples_to_transmit(samples=repeated_aks,

@@ -13,7 +13,8 @@ class GreedySampler:
                  use_ratio=True,
                  is_final_sample=False,
                  is_first_index=False,
-                 topk=None):
+                 topk=None,
+                 z_prior=None):
 
         self.seed = seed
         self.coding = coding
@@ -25,7 +26,8 @@ class GreedySampler:
         self.is_final_sample = is_final_sample
         self.is_first_index = is_first_index
         self.topk = topk
-
+        self.z_prior = z_prior
+   
         assert (self.is_first_index != True) or (self.is_final_sample != True), "Can't be both the first and final index!"
 
     def get_samples_from_coder(self):
@@ -43,9 +45,11 @@ class GreedySampler:
 
         # add samples together
         z_samples = torch.sum(tiled_previous_samples, dim=1) + samples
-
+        
         log_probs = self.target.log_prob(z_samples)
-
+        if (self.z_prior is not None) and self.use_ratio:
+            prior_log_probs = self.z_prior.log_prob(z_samples)
+            log_probs -= prior_log_probs
         return log_probs
 
     def choose_samples_to_transmit(self, samples, n_samples_per_aux=None, previous_samples=None):

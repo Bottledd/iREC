@@ -8,15 +8,13 @@ class KDEPosterior:
                  coding_sampler,
                  beamwidth,
                  ):
+        
         self.z_samples = target.component_distribution.mean
         self.var_kde = target.component_distribution.covariance_matrix[0][0][0]
         self.current_z_mixing_weights = torch.tile(target.mixture_distribution.probs, (beamwidth, 1))
         self.current_z_means = torch.tile(target.component_distribution.mean, (beamwidth, 1, 1))
         self.current_z_covariance = target.component_distribution.covariance_matrix[0]
         self.beamwidth = beamwidth
-
-        # self.current_z_means = torch.tile(target.mean, (beamwidth, 1))
-        # self.current_z_var = torch.tile(target.covariance_matrix, (beamwidth, 1, 1))
         self.coding_sampler = coding_sampler
         self.problem_dimension = target.mean.shape[0]
 

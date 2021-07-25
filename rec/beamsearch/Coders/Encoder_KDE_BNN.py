@@ -26,7 +26,7 @@ class EncoderKDE:
                  beamwidth,
                  epsilon=0.,
                  prior_var=1.,
-                 ):
+                 total_kl=None):
         # store the base NN
         self.model = model
         self.x_data = x_data
@@ -45,11 +45,14 @@ class EncoderKDE:
         # create dummy coding object to compute kl with target
         coding_z_prior = coding_sampler(problem_dimension=self.problem_dimension, n_auxiliary=1, var=prior_var)
 
-        try:
-            kl_q_p = dist.kl_divergence(target, coding_z_prior)
-        except:
-            # need to do MC estimate
-            kl_q_p = kl_estimate_with_mc(target, coding_z_prior)
+        if total_kl is not None:
+            kl_q_p = total_kl
+        else:
+            try:
+                kl_q_p = dist.kl_divergence(target, coding_z_prior)
+            except:
+                # need to do MC estimate
+                kl_q_p = kl_estimate_with_mc(target, coding_z_prior)
 
         self.total_kl = kl_q_p
 

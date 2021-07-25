@@ -11,6 +11,7 @@ from pyro.contrib.bnn.hidden_layer import HiddenLayer
 class BayesianNeuralNetwork(PyroModule):
     def __init__(self, in_features=1, hidden_nodes=10, out_features=1, prior_var=1., likelihood_var=1./25.):
         super(BayesianNeuralNetwork, self).__init__()
+        print(prior_var)
         self.input_layer = PyroModule[nn.Linear](in_features, hidden_nodes)
         self.input_layer.weight = PyroSample(dist.Normal(0., prior_var ** 0.5).expand([hidden_nodes, in_features]).to_event(2))
         self.input_layer.bias = PyroSample(dist.Normal(0., prior_var ** 0.5).expand([hidden_nodes]).to_event(1))

@@ -11,7 +11,8 @@ class ImportanceSampler:
                  is_final_sample=False,
                  coding_joint_history=None,
                  target_joint_history=None,
-                 topk=None
+                 topk=None,
+                 z_prior=None
                  ):
         self.seed = seed
         self.coding = coding
@@ -19,6 +20,8 @@ class ImportanceSampler:
         self.num_samples = num_samples
         self.is_final_sample = is_final_sample
         self.topk = topk
+        self.z_prior = z_prior
+
 
     def get_samples_from_coder(self):
         torch.manual_seed(self.seed)
@@ -41,7 +44,10 @@ class ImportanceSampler:
         z_samples = torch.sum(previous_samples, dim=0) + samples
 
         log_probs = self.target.log_prob(z_samples)
-
+        
+        if (self.z_prior is not None) and self.use_ratios:
+            prior_log_probs = self.z_prior.log_prob(z_samples)
+            log_probs -= prior_log_probs
         return log_probs
 
     def choose_samples_to_transmit(self, samples, previous_samples=None):

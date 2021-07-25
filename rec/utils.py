@@ -28,8 +28,8 @@ def plot_2d_distribution(distribution):
     cat_grid = torch.cat((x_grid.reshape(1000, 1000, 1), y_grid.reshape(1000, 1000, 1)), dim=-1)
     log_probs = distribution.log_prob(cat_grid)
     plt.contourf(x_grid, y_grid, torch.exp(log_probs), levels=50)
-    plt.xlabel(r"$w_1$")
-    plt.ylabel(r"$w_0$")
+    plt.xlabel(r"$z_1$")
+    plt.ylabel(r"$z_0$")
     plt.gca().set_aspect('equal', adjustable='box')
 
 
@@ -44,11 +44,11 @@ def plot_1d_distribution(distribution):
 def plot_running_sum_2d(samples, indices=(0,1), plot_index_labels=False):
     n_auxiliary = samples.shape[0]
     running_sum = torch.cumsum(samples, dim=0)
-    plt.plot(running_sum[:, indices[0]], running_sum[:, indices[1]], '-')
+    plt.plot(running_sum[:, indices[0]], running_sum[:, indices[1]], 'o-', linewidth=2.5)
 
     if plot_index_labels:
         for i, txt in enumerate(range(n_auxiliary)):
-            plt.annotate(txt, (running_sum[i, indices[0]], running_sum[i, indices[1]]), color='black')
+            plt.annotate(f'$\mathbf{{a}}_{{{i+1}}}$', (running_sum[i, indices[0]], running_sum[i, indices[1]]), color='black', fontsize=16)
 
 
 def plot_running_sum_1d(target, samples, plot_index_labels=False):

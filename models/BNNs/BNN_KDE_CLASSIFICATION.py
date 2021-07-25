@@ -89,7 +89,15 @@ class BNN_KDE(nn.Module):
     
     def weight_prior_lp(self, weight_samples):
         return self.weight_prior.log_prob(weight_samples).sum(1)
-
+    
+    def joint_log_prob(self, x, y, n_samples):
+        # first sample weights from KDE
+        weight_samples = self.sample_from_kde(n_samples)
+        y_preds = self.batch_predict(weight_samples, x)
+        weight_prior_lp = self.weight_prior_lp(weight_samples)
+        data_likelihood_lp = self.data_likelihood(y_preds, y)
+        
+        return (data_likelihood_lp + weight_prior_lp).mean()
 
     def elbo(self, x, y, n_samples):
         # first sample weights from KDE

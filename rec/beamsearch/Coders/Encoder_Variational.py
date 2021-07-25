@@ -229,7 +229,8 @@ class Encoder:
                                                            coding_joint_history=self.selected_samples_joint_coding_log_prob,
                                                            target_joint_history=self.selected_samples_joint_posterior_log_prob,
                                                            is_final_sample=True,
-                                                           topk=self.beamwidth)
+                                                           topk=self.beamwidth,
+                                                           z_prior=self.auxiliary_posterior.coding_sampler)
                 trial_aks = selection_sampler.get_samples_from_coder()
                 repeated_aks = torch.repeat_interleave(trial_aks, self.beamwidth, dim=0)
                 indices, samples = selection_sampler.choose_samples_to_transmit(samples=repeated_aks,
