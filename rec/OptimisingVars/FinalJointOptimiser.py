@@ -19,7 +19,7 @@ class FinalJointOptimiser(nn.Module):
         self.total_var = total_var
         self.dim = z_sample.shape[0]
         self.register_buffer('trajectories', torch.zeros(n_trajectories, n_auxiliaries, self.dim))
-        self.pre_softmax_aux_vars = nn.Parameter(torch.ones(n_auxiliaries))
+        self.pre_softmax_aux_vars = nn.Parameter(torch.randn(n_auxiliaries))
         self.kl_history = []
         self.total_kl = float(total_kl)
         self.lr=lr
