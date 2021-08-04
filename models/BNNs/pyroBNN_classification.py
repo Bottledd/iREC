@@ -32,7 +32,7 @@ class BayesianNeuralNetwork(PyroModule):
         logits = self.output_layer(x)
         
         with pyro.poutine.scale(scale=1. / self.kl_beta):
-            with pyro.plate('data'):
+            with pyro.plate('data', x.shape[0]):
                 pyro.sample('obs', dist.Categorical(logits=logits), obs=y)
         
         return logits
