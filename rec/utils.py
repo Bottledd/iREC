@@ -41,14 +41,23 @@ def plot_1d_distribution(distribution):
     plt.plot(grid, probs)
 
 
-def plot_running_sum_2d(samples, indices=(0,1), plot_index_labels=False):
+def plot_running_sum_2d(samples, indices=(0,1), plot_index_labels=False, ax=None, start_from_origin=False,
+                       color=None, label=None):
+    if ax is None:
+        ax = plt.gca()
     n_auxiliary = samples.shape[0]
+    if start_from_origin:
+        samples = torch.cat([torch.zeros_like(samples[0])[None], samples], dim=0)
     running_sum = torch.cumsum(samples, dim=0)
-    plt.plot(running_sum[:, indices[0]], running_sum[:, indices[1]], 'o-', linewidth=2.5)
-
+    if color is not None:
+        ax.plot(running_sum[:, indices[0]], running_sum[:, indices[1]], 'o-', linewidth=2.5, color=color, label=label)
+    else:
+        ax.plot(running_sum[:, indices[0]], running_sum[:, indices[1]], 'o-', linewidth=2.5, label=label)
+    if start_from_origin:
+        running_sum = running_sum[1:]
     if plot_index_labels:
         for i, txt in enumerate(range(n_auxiliary)):
-            plt.annotate(f'$\mathbf{{a}}_{{{i+1}}}$', (running_sum[i, indices[0]], running_sum[i, indices[1]]), color='black', fontsize=16)
+            ax.annotate(f'$\mathbf{{a}}_{{{i+1}}}$', (running_sum[i, indices[0]], running_sum[i, indices[1]]), color='black', fontsize=16)
 
 
 def plot_running_sum_1d(target, samples, plot_index_labels=False):
